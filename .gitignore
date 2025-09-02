@@ -20,3 +20,4 @@ public/status.json
 *.tmp
 archive/.env.bak*
 .env
+config/config.json

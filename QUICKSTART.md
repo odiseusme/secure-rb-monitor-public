@@ -1,79 +1,55 @@
-# Quick Start Guide
+# Quick Start
 
-## Canonical Workflow
+## 1. Prerequisites
+- Node.js (LTS) or Docker
+- (Optional) Bash environment for scripts
 
-### Option 1: One-Shot Bootstrap (Recommended)
+## 2. Clone
 ```bash
-# Clone and start everything in one command
-git clone https://github.com/odiseusme/secure-rb-monitor.git
-cd secure-rb-monitor
-scripts/bootstrap.sh
+git clone https://github.com/odiseusme/secure-rb-monitor-public.git
+cd secure-rb-monitor-public
 ```
 
-This will:
-- Auto-select an available port (starting from 8080)
-- Create necessary directories
-- Build and start the Docker container
-- Show you the access URLs
-
-### Option 2: Manual Step-by-Step
+## 3. Create Runtime Config
 ```bash
-# 1. Select/configure port
-scripts/select_host_port.sh
-
-# 2. Start the monitor
-docker-compose up -d --build
-
-# 3. Check URLs
-scripts/show_monitor_url.sh
+mkdir -p config
+cp config.json.example config/config.json
+# Edit values if needed
 ```
 
-### Option 3: Advanced Configuration
+## 4. Install Dependencies (Local)
 ```bash
-# Bind to all interfaces (LAN access) and show QR code
-BIND_ALL=1 SHOW_QR=1 scripts/select_host_port.sh
-
-# Start with manual compose
-docker-compose up -d --build
-
-# View with QR code for mobile
-SHOW_QR=1 scripts/show_monitor_url.sh
+npm install
 ```
 
-## Environment Variables
-
-Edit `.env` to customize:
-- `HOST_IP`: Interface binding (127.0.0.1 = local, 0.0.0.0 = LAN)
-- `HOST_PORT`: External access port (auto-selected if not set)
-- `UPDATE_INTERVAL`: Refresh rate in milliseconds (default: 30000)
-- `TZ`: Timezone for logs (default: UTC)
-
-## Common Commands
-
+## 5. Run (Local)
 ```bash
-# View logs
-docker-compose logs -f
+node static-server.js &
+node status-updater.js
+```
+Access: http://localhost:8080  (or the port selected by `scripts/select_host_port.sh`)
 
-# Stop monitor
-docker-compose down
-
-# Restart with new build
-docker-compose up -d --build
-
-# Force new port selection
-FORCE=1 scripts/select_host_port.sh
-
-# Open browser automatically
-OPEN_BROWSER=1 scripts/select_host_port.sh
+## 6. Run via Docker
+```bash
+docker build -t rb-monitor .
+docker run -p 8080:8080 --name rbm rb-monitor
 ```
 
-## Mobile Access
-
-For smartphone/tablet access:
+## 7. Using docker-compose
 ```bash
-# Enable LAN binding and show QR code
-BIND_ALL=1 SHOW_QR=1 scripts/select_host_port.sh
-docker-compose up -d --build
+docker compose up --build
 ```
 
-Scan the QR code with your phone camera to open the monitor.
+## 8. Show URL Helper
+```bash
+./scripts/show_monitor_url.sh
+```
+
+## 9. Updating Status Manually
+```bash
+node write_status.js
+```
+
+## 10. Next Steps
+- Explore `status-updater.js` to add new data sources
+- Propose improvements via issues / PRs
