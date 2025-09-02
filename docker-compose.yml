@@ -1,0 +1,53 @@
+
+services:
+  rosen-monitor:
+    build: .
+    container_name: rosen-bridge-monitor
+    # If you truly require docker.sock access as root, keep user: "0:0".
+    # Otherwise consider least privilege with user: "1001:1001" (adjust Dockerfile USER accordingly).
+    user: "0:0"
+    restart: always
+
+    env_file:
+      - .env
+    environment:
+      - MONITOR_PORT=${MONITOR_PORT:-8080}
+      - UPDATE_INTERVAL=${UPDATE_INTERVAL:-30000}
+      - TZ=${TZ:-UTC}
+      - NODE_ENV=production
+
+    ports:
+      - "${HOST_IP:-127.0.0.1}:${HOST_PORT:-8080}:8080"
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 128M
+
+    labels:
+      - "com.rosen-bridge.service=monitor"
+      - "com.rosen-bridge.description=Rosen Bridge Infrastructure Monitor"
+
+    networks:
+      - rosen_network
+
+networks:
+  rosen_network:
+    name: rosen_network

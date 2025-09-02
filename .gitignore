@@ -1,0 +1,22 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# Docker logs/data (runtime)
+logs/
+data/
+
+# Generated at runtime
+public/status.json
+
+# Editor/OS noise
+.DS_Store
+*.swp
+
+# Backups & temp
+*.bak
+*.bak.*
+*.backup
+*.tmp
+archive/.env.bak*
+.env

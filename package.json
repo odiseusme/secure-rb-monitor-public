@@ -1,0 +1,47 @@
+{
+  "name": "rosen-bridge-monitor",
+  "version": "2.1.0",
+  "description": "Remote monitoring dashboard for Rosen Bridge infrastructure - access health summaries from any PC or mobile device",
+  "main": "write_status.js",
+  "scripts": {
+    "setup": "./setup.sh",
+    "start": "node write_status.js",
+    "serve": "node static-server.js",
+    "serve:python": "cd public && python3 -m http.server 8080",
+    "update": "node status-updater.js",
+    "dev": "npm run update & npm run serve",
+    "docker:build": "docker build -t rosen-monitor .",
+    "docker:run": "docker-compose up -d",
+    "docker:stop": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "deploy": "./deploy-docker.sh",
+    "detect": "./detect"
+  },
+  "keywords": [
+    "rosen-bridge",
+    "blockchain",
+    "monitor",
+    "static",
+    "watcher",
+    "infrastructure"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "node-fetch": "^2.6.7"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/odiseusme/secure-rb-monitor.git"
+  },
+  "docker": {
+    "registry": "ghcr.io",
+    "image": "rosen-bridge-monitor"
+  }
+}

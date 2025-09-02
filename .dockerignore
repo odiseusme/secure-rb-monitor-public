@@ -1,0 +1,43 @@
+# Node modules (installed in container)
+node_modules
+
+# Environment files
+.env
+
+# Local runtime data/logs
+logs
+data
+
+# Generated at runtime
+public/status.json
+
+# Archives / backups / host-only tools
+archive
+tools
+*.bak
+*.bak.*
+*.backup
+*.tmp
+
+# Host-only scripts
+scripts/
+
+# VCS metadata
+.git
+.gitignore
+
+# Configuration (except example)
+config/*.json
+!config/config.json.example
+
+# Editor/OS noise
+.DS_Store
+*.swp
+*.swo
+*.log
+
+# Other development files
+README*.md
+CHANGELOG.md
+MIGRATION.md
+*.patch

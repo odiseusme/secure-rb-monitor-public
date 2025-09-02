@@ -1,0 +1,16 @@
+{
+  "monitor": {
+    "updateInterval": 30000,
+    "port": 8080,
+    "enableWebUI": true,
+    "bindAddress": "0.0.0.0"
+  },
+  "docker": {
+    "enabled": true,
+    "socketPath": "/var/run/docker.sock"
+  },
+  "logging": {
+    "level": "info",
+    "file": "/app/logs/monitor.log"
+  }
+}
