@@ -201,8 +201,8 @@ docker run -d \
 - Not reachable after reboot → check Docker daemon & restart policy.
 - Inspect container:
   ```bash
-  docker ps -a --filter name=rb-monitor
-  docker logs rb-monitor --tail 50
+docker ps -a --filter name=rb-monitor
+docker logs rb-monitor --tail 50
   ```
 
 ---
@@ -331,6 +331,5 @@ See `CONTRIBUTING.md` for branching, commit style, and review expectations.
 
 ## License
 MIT – see `LICENSE`.
-
 ---
 > Feedback (especially from Rosen Bridge core maintainers) is welcome—open focused issues or PRs.
