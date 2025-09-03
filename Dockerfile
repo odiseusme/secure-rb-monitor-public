@@ -1,7 +1,19 @@
 FROM node:20-alpine
 
-# Create non-root user (UID/GID fixed)
-RUN addgroup -g 1001 -S monitor && adduser -S monitor -u 1001 -G monitor
+# Accept a build ARG for the Docker group GID, but do NOT default—force user to provide!
+ARG DOCKER_GID
+
+# Abort if DOCKER_GID is missing!
+RUN if [ -z "$DOCKER_GID" ]; then \
+      echo "ERROR: DOCKER_GID build arg not set. Run './select_host_port.sh' before building."; \
+      exit 1; \
+    fi
+
+# Ensure docker group exists with correct GID (from DOCKER_GID build arg)
+RUN addgroup -g ${DOCKER_GID} docker || true
+
+# Create monitor user (Alpine syntax), add to both 'monitor' and 'docker' groups
+RUN addgroup -S monitor && adduser -S monitor -G monitor && addgroup monitor docker
 
 WORKDIR /app
 
@@ -21,13 +33,16 @@ COPY config.json.example ./config/config.json
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 
-# Writable dirs
-RUN mkdir -p /app/data /app/logs /app/config && chown -R monitor:monitor /app
+# Ensure monitor owns ALL files (fixes permission for writes!)
+RUN chown -R monitor:monitor /app
 
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD curl -fsS http://localhost:8080/health || exit 1
 
+USER root
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["node", "static-server.js"]
