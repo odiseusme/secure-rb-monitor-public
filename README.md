@@ -1,12 +1,13 @@
 # Secure RB Monitor (Public Baseline)
 
-A lightweight monitoring and status publishing component related to Rosen Bridge infrastructure (early public snapshot).  
-Current focus:
+A lightweight monitoring and status publishing component for the Watchers of the Rosen Bridge infrastructure (early public snapshot).
+
+_Current focus:_
 - Minimal web status UI (`public/` assets + `static-server.js`)
 - Periodic status updating (`status-updater.js`, `write_status.js`)
-- Simple bootstrap scripts for local / container usage
+- Simple bootstrap scripts for local/container usage
 
-> Status: v0.1.1 (docs + Docker hardening updates). Expect rapid iteration; APIs & structure may evolve.
+> Status: v0.2 (docs + Docker hardening updates). Expect rapid iteration; APIs & structure may evolve.
 
 ## Table of Contents
 - [Purpose](#purpose)
@@ -15,7 +16,7 @@ Current focus:
   - [1. Prerequisites](#1-prerequisites)
   - [2. Clone](#2-clone)
   - [3. Create Runtime Config](#3-create-runtime-config)
-  - [4. Select / Reserve a Host Port (Recommended)](#4-select--reserve-a-host-port-recommended)
+  - [4. Prepare Build Setup (Recommended)](#4-prepare-build-setup-recommended)
   - [5. Run via docker-compose (Preferred)](#5-run-via-docker-compose-preferred)
     - [5.1 Optional: Persistence & Logs](#51-optional-persistence--logs)
     - [5.2 Restart Policy](#52-restart-policy)
@@ -36,20 +37,20 @@ Current focus:
   - [Potential Future Enhancements](#potential-future-enhancements)
 - [Project Layout](#project-layout)
 - [Development Workflow](#development-workflow)
-- [Security](#security)
+- [🛡️ Docker Security Hardening (Best Practice)](#docker-security-hardening-best-practice)
 - [Contributing](#contributing)
 - [License](#license)
 
 ## Purpose
-Provide an openly reviewable starting point for the Rosen Bridge ecosystem monitor. Enables:
+Openly reviewable starting point for Rosen Bridge ecosystem monitor. Enables:
 - Local or containerized deployment
-- Periodic retrieval / formatting of token / balance / status data
+- Periodic retrieval/formatting of token/balance/status data
 - Basic static hosting of status artifacts or UI
 
 ## Non-Goals (Now)
 - Production-hardening (HA, clustering)
 - Advanced auth / RBAC
-- Observability (structured metrics / log shipping)
+- Observability (structured metrics/log shipping)
 - Comprehensive test suite (placeholder only)
 
 ## Quick Start
@@ -57,7 +58,7 @@ Provide an openly reviewable starting point for the Rosen Bridge ecosystem monit
 ### 1. Prerequisites
 - Node.js (LTS) OR Docker
 - Bash (for helper scripts)
-- (Optional) `qrencode` if you want a QR code for the chosen URL
+- (Optional) `qrencode` for QR code output
 - (Optional) `curl` (already present inside container image for healthcheck)
 
 ### 2. Clone
@@ -73,27 +74,27 @@ cp config.json.example config/config.json
 # Edit values if needed
 ```
 
-### 4. Select / Reserve a Host Port (Recommended)
-The helper script picks an available port (starts at 8080 by default), writes/updates `.env` (`HOST_PORT`, `HOST_IP`, fallback `MONITOR_PORT`), and prints accessible URLs.
+### 4. Prepare Build Setup (Recommended)
+The helper script (`prepare-build.sh`) selects an available port (starting at 8080 by default), updates `.env` (`HOST_PORT`, `HOST_IP`, fallback `MONITOR_PORT`), and prints accessible URLs.
 
 ```bash
-./scripts/select_host_port.sh
-# Re-run with force:
-FORCE=1 ./scripts/select_host_port.sh
+./scripts/prepare-build.sh
+# Force rerun:
+FORCE=1 ./scripts/prepare-build.sh
 ```
 
 Options:
-- Bind all interfaces (instead of only localhost):
+- Bind all interfaces:  
   ```bash
-  BIND_ALL=1 ./scripts/select_host_port.sh
+  BIND_ALL=1 ./scripts/prepare-build.sh
   ```
-- Auto-open browser:
+- Auto-open browser:  
   ```bash
-  OPEN_BROWSER=1 ./scripts/select_host_port.sh
+  OPEN_BROWSER=1 ./scripts/prepare-build.sh
   ```
-- Show QR code (needs `qrencode`):
+- Show QR code (needs `qrencode`):  
   ```bash
-  SHOW_QR=1 ./scripts/select_host_port.sh
+  SHOW_QR=1 ./scripts/prepare-build.sh
   ```
 
 If you skip this step:
@@ -105,7 +106,7 @@ If you skip this step:
 Reproducible and sets restart policy + volume mounts.
 
 ```bash
-./scripts/select_host_port.sh   # optional but recommended
+./scripts/prepare-build.sh
 docker compose up -d --build
 ```
 
@@ -126,12 +127,13 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./config:/app/config
+      - ./public:/app/public
 ```
 
 #### 5.1 Optional: Persistence & Logs
 (If not already created)
 ```bash
-mkdir -p data logs config
+mkdir -p data logs config public
 cp config.json.example config/config.json  # if not done
 ```
 
@@ -169,7 +171,7 @@ docker run -d \
 
 #### 6.1 Reviewer-Friendly Automated Port Selection
 ```bash
-./scripts/select_host_port.sh
+./scripts/prepare-build.sh
 export $(grep HOST_PORT .env | xargs)
 docker run -d \
   --name rb-monitor \
@@ -180,10 +182,10 @@ docker run -d \
 
 #### 6.2 Persistence (Optional)
 ```bash
-mkdir -p monitor-data monitor-logs config
-cp config.json.example config/config.json  # if not done yet
+mkdir -p monitor-data monitor-logs config public
+cp config.json.example config/config.json
 
-./scripts/select_host_port.sh
+./scripts/prepare-build.sh
 export $(grep HOST_PORT .env | xargs)
 
 docker run -d \
@@ -193,16 +195,17 @@ docker run -d \
   -v "$(pwd)/monitor-data":/app/data \
   -v "$(pwd)/monitor-logs":/app/logs \
   -v "$(pwd)/config":/app/config \
+  -v "$(pwd)/public":/app/public \
   rb-monitor
 ```
 
 #### 6.3 Troubleshooting
-- Port already in use → rerun `./scripts/select_host_port.sh`.
+- Port already in use → rerun `./scripts/prepare-build.sh`.
 - Not reachable after reboot → check Docker daemon & restart policy.
 - Inspect container:
   ```bash
-docker ps -a --filter name=rb-monitor
-docker logs rb-monitor --tail 50
+  docker ps -a --filter name=rb-monitor
+  docker logs rb-monitor --tail 50
   ```
 
 ---
@@ -239,9 +242,9 @@ node write_status.js
 
 ### 11. Next Steps
 - Extend data sources (`status-updater.js`, `write_status.js`)
-- Add metrics / structured logging
-- Harden security (see notes below)
-- Open focused issues / PRs
+- Add metrics/structured logging
+- Harden security (see Hardening section below)
+- Open focused issues/PRs
 
 ---
 
@@ -268,26 +271,27 @@ Environment overrides (see `.env.example`) via:
 3. `static-server.js` serves `public/` + generated artifacts.
 
 ### Scripts
+- `scripts/prepare-build.sh`: selects port, sets up `.env`
 - `scripts/bootstrap.sh`: environment sanity
 - `scripts/serve_public.sh`: wrapper for static server
-- `scripts/select_host_port.sh`: dynamic port selection + `.env` management
 - `scripts/show_monitor_url.sh`: prints URLs
 
 ### Docker
 Container image:
 - Based on `node:20-alpine`
-- Non-root user `monitor` (UID 1001)
-- `docker-entrypoint.sh` adjusts group perms to allow non-root access to `docker.sock` if mounted; then drops privileges with `su-exec`.
-- HEALTHCHECK hits `/health`.
-- Volumes recommended for `data`, `logs`, `config`.
+- Non-root user `monitor` (UID 100)
+- Docker socket access securely configured (see Hardening section below)
+- HEALTHCHECK hits `/health`
+- Volumes for `data`, `logs`, `config`, `public`
 
-Security note: Mounting the Docker socket grants broad host introspection. Only do this in trusted, controlled environments.
+> **Security note:**  
+> Mounting the Docker socket grants host introspection. Only do this in trusted, controlled environments.
 
 ### Potential Future Enhancements
 - Pluggable collector framework
 - Metrics exporter (Prometheus / OTEL)
 - TypeScript migration
-- Structured logging + rotation / remote sink
+- Structured logging + rotation/remote sink
 
 ---
 
@@ -314,15 +318,114 @@ Security note: Mounting the Docker socket grants broad host introspection. Only 
 3. `npm install`
 4. Run server + updater (or Compose)
 5. Edit code, re-run processes
-6. (Optional) Add tests / linting
+6. (Optional) Add tests/linting
 
 CI: GitHub Actions (baseline soon).
 
 ---
 
-## Security
-See `SECURITY.md` for reporting and hardening roadmap.  
-Non-root container + dynamic docker group join reduces friction but does not remove risks of a mounted `docker.sock`.
+## 🛡️ Docker Security Hardening (Best Practice)
+
+This project is hardened for production and defense-in-depth.
+
+**Key steps:**
+- Minimize container privileges
+- Protect host/data from container compromise
+- Only required files are writable
+
+### 1. Minimal Container Capabilities
+
+`docker-compose.yml`:
+```yaml
+cap_drop:
+  - ALL
+cap_add:
+  - SETGID
+  - SETUID
+```
+Drops all Linux capabilities except those needed for privilege changes.
+
+---
+
+### 2. Read-Only Root Filesystem
+
+```yaml
+read_only: true
+```
+Makes the container filesystem immutable except for explicitly mounted volumes.
+
+---
+
+### 3. Writable Volumes for App Output
+
+Mount all directories your app writes to:
+```yaml
+volumes:
+  - /var/run/docker.sock:/var/run/docker.sock:ro   # Docker API access
+  - ./data:/app/data
+  - ./logs:/app/logs
+  - ./config:/app/config
+  - ./public:/app/public       # For status.json and UI updates!
+```
+
+---
+
+### 4. Least-Privilege User With Docker Socket Access
+
+Create `monitor` user and add to both its own group and the host’s `docker` group (pass `DOCKER_GID` build arg):
+
+```dockerfile
+ARG DOCKER_GID
+RUN addgroup -g ${DOCKER_GID} docker || true
+RUN addgroup -S monitor && adduser -S monitor -G monitor && addgroup monitor docker
+```
+Monitor runs as non-root but can read the Docker socket.
+
+---
+
+### 5. Entrypoint and Permissions
+
+- Copy entrypoint and Node app files
+- Set ownership
+- Run entrypoint as root (to allow privilege drop)
+
+```dockerfile
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+RUN chown -R monitor:monitor /app
+USER root
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+CMD ["node", "static-server.js"]
+```
+
+---
+
+### 6. Build Instructions
+
+Pass host’s docker group GID:
+```bash
+DOCKER_GID=$(getent group docker | cut -d: -f3)
+docker compose build --build-arg DOCKER_GID=$DOCKER_GID
+```
+
+---
+
+### 7. Quick Checklist
+
+- [x] UI, logs, and status output work after hardening
+- [x] Only necessary directories are writable
+- [x] Docker socket access works for non-root monitor user
+- [x] No container privilege escalation risk
+
+---
+
+### 8. Troubleshooting
+
+- `EROFS: read-only file system`? Check writable volumes.
+- Docker socket permission errors? Check monitor user’s group membership and socket GID.
+
+_For more info:_  
+See [Docker security best practices](https://docs.docker.com/engine/security/security/) and [least privilege containers](https://docs.docker.com/develop/security/).
 
 ---
 
@@ -331,5 +434,7 @@ See `CONTRIBUTING.md` for branching, commit style, and review expectations.
 
 ## License
 MIT – see `LICENSE`.
+
 ---
 > Feedback (especially from Rosen Bridge core maintainers) is welcome—open focused issues or PRs.
+

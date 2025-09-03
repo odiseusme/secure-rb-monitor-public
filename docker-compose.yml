@@ -1,11 +1,17 @@
-
 services:
   rosen-monitor:
-    build: .
+    build:
+      context: .
+      args:
+        DOCKER_GID: "${DOCKER_GID}"
     container_name: rosen-bridge-monitor
-    # If you truly require docker.sock access as root, keep user: "0:0".
-    # Otherwise consider least privilege with user: "1001:1001" (adjust Dockerfile USER accordingly).
-    user: "0:0"
+    
+    cap_drop:
+    - ALL
+    
+    cap_add:
+    - SETGID
+    - SETUID
     restart: always
 
     env_file:
@@ -19,12 +25,15 @@ services:
     ports:
       - "${HOST_IP:-127.0.0.1}:${HOST_PORT:-8080}:8080"
 
+    read_only: true
+    
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./data:/app/data
       - ./logs:/app/logs
       - ./config:/app/config
-
+      - ./public:/app/public
+      
     healthcheck:
       test: ["CMD-SHELL", "curl --fail http://localhost:8080/health || exit 1"]
       interval: 30s

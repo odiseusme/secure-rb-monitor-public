@@ -13,9 +13,9 @@ if [ -S "$SOCK" ]; then
       addgroup -g "$SOCK_GID" dockersock 2>/dev/null || true
     fi
     DOCKER_GRP_NAME="$(getent group "$SOCK_GID" | cut -d: -f1)"
-    # Add monitor user to that group
+    # Add monitor user to that group (Alpine syntax!)
     if ! id -nG "$APP_USER" | grep -qw "$DOCKER_GRP_NAME"; then
-      adduser "$APP_USER" "$DOCKER_GRP_NAME" 2>/dev/null || true
+      addgroup "$APP_USER" "$DOCKER_GRP_NAME" 2>/dev/null || true
     fi
   fi
 fi

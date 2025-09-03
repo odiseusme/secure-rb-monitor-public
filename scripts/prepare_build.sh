@@ -16,6 +16,31 @@ OPEN_BROWSER="${OPEN_BROWSER:-0}"
 log() { printf '[port-select] %s\n' "$*" >&2; }
 have_cmd() { command -v "$1" >/dev/null 2>&1; }
 
+set_docker_gid() {
+  # Detect the docker group GID and write it to .env
+  local gid
+  gid=$(getent group docker | cut -d: -f3)
+  if [ -z "$gid" ]; then
+    log "Error: Could not find 'docker' group on this system."
+    exit 1
+  fi
+  if [ ! -f "$ENV_FILE" ]; then
+    echo "DOCKER_GID=$gid" > "$ENV_FILE"; return
+  fi
+  if grep -qE "^DOCKER_GID=" "$ENV_FILE"; then
+    tmp="$(mktemp "${ENV_FILE}.XXXX")"
+    awk -v k="DOCKER_GID" -v v="$gid" -F= '
+      BEGIN{u=0}
+      $1==k {$0=k"="v; u=1}
+      {print}
+      END{ if(!u){print k"="v} }' "$ENV_FILE" > "$tmp"
+    mv "$tmp" "$ENV_FILE"
+  else
+    echo "DOCKER_GID=$gid" >> "$ENV_FILE"
+  fi
+  log ".env updated: DOCKER_GID=$gid"
+}
+
 port_in_use() {
   local port="$1"
   if have_cmd ss; then
@@ -101,6 +126,7 @@ print_qr() {
 }
 
 main() {
+  set_docker_gid      # <<== NEW: always update DOCKER_GID in .env before anything else
   maybe_bind_all
 
   if [ -f "$ENV_FILE" ] && grep -qE '^HOST_PORT=' "$ENV_FILE" && [ "$FORCE" -ne 1 ]; then
