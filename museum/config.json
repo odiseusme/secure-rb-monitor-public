@@ -1,0 +1,6 @@
+{
+  "watchers": [
+    {"name":"watcher_3030-service-1","url":"http://watcher_3030-service-1:3000/info","network":"ergo"},
+    {"name":"watcher_3042-service-1","url":"http://watcher_3042-service-1:3000/info","network":"ergo"}
+  ]
+}

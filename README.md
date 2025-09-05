@@ -1,51 +1,60 @@
 # Secure RB Monitor (Public Baseline)
 
-A lightweight monitoring and status publishing component for the Watchers of the Rosen Bridge infrastructure (early public snapshot).
+A lightweight monitoring and status publishing component for the Watchers of the Rosen Bridge infrastructure.
 
 _Current focus:_
 - Minimal web status UI (`public/` assets + `static-server.js`)
-- Periodic status updating (`status-updater.js`, `write_status.js`)
+- Secure API-based monitoring (no privileged Docker access required)
+- Automatic watcher discovery and network configuration
 - Simple bootstrap scripts for local/container usage
 
-> Status: v0.2 (docs + Docker hardening updates). Expect rapid iteration; APIs & structure may evolve.
+> Status: v0.3 (Security-hardened API-only architecture). Expect rapid iteration; APIs & structure may evolve.
 
 ## Table of Contents
 - [Purpose](#purpose)
+- [Security Architecture](#security-architecture)
 - [Non-Goals (Now)](#non-goals-now)
 - [Quick Start](#quick-start)
   - [1. Prerequisites](#1-prerequisites)
   - [2. Clone](#2-clone)
-  - [3. Create Runtime Config](#3-create-runtime-config)
-  - [4. Prepare Build Setup (Recommended)](#4-prepare-build-setup-recommended)
-  - [5. Run via docker-compose (Preferred)](#5-run-via-docker-compose-preferred)
-    - [5.1 Optional: Persistence & Logs](#51-optional-persistence--logs)
-    - [5.2 Restart Policy](#52-restart-policy)
-  - [6. Run via Docker (Direct Alternative)](#6-run-via-docker-direct-alternative)
-    - [6.1 Reviewer-Friendly Automated Port Selection](#61-reviewer-friendly-automated-port-selection)
-    - [6.2 Persistence (Optional)](#62-persistence-optional)
-    - [6.3 Troubleshooting](#63-troubleshooting)
-  - [7. Run Locally (Two Processes)](#7-run-locally-two-processes)
-  - [8. One-Off Manual Status Update](#8-one-off-manual-status-update)
-  - [9. Show URL Helper](#9-show-url-helper)
-  - [10. Updating Status While Running](#10-updating-status-while-running)
-  - [11. Next Steps](#11-next-steps)
+  - [3. Automatic Setup (Recommended)](#3-automatic-setup-recommended)
+  - [4. Run via docker-compose (Preferred)](#4-run-via-docker-compose-preferred)
+    - [4.1 Optional: Persistence & Logs](#41-optional-persistence--logs)
+    - [4.2 Restart Policy](#42-restart-policy)
+  - [5. Run via Docker (Direct Alternative)](#5-run-via-docker-direct-alternative)
+  - [6. Run Locally (Two Processes)](#6-run-locally-two-processes)
+  - [7. Manual Status Update](#7-manual-status-update)
+  - [8. Adding/Removing Watchers](#8-addingremoving-watchers)
+  - [9. Next Steps](#9-next-steps)
 - [Configuration](#configuration)
 - [Architecture Overview](#architecture-overview)
   - [Core Data Flow](#core-data-flow)
   - [Scripts](#scripts)
   - [Docker](#docker)
-  - [Potential Future Enhancements](#potential-future-enhancements)
+  - [Network Architecture](#network-architecture)
 - [Project Layout](#project-layout)
 - [Development Workflow](#development-workflow)
-- [🛡️ Docker Security Hardening (Best Practice)](#docker-security-hardening-best-practice)
+- [🛡️ Security Features](#🛡️-security-features)
 - [Contributing](#contributing)
 - [License](#license)
 
 ## Purpose
-Openly reviewable starting point for Rosen Bridge ecosystem monitor. Enables:
-- Local or containerized deployment
-- Periodic retrieval/formatting of token/balance/status data
-- Basic static hosting of status artifacts or UI
+Openly reviewable, security-hardened monitoring solution for Rosen Bridge ecosystem. Enables:
+- Local or containerized deployment without privileged access
+- Automatic discovery and monitoring of watcher services
+- Secure API-based data collection (no Docker socket required)
+- Basic static hosting of status artifacts and UI
+
+## Security Architecture
+
+**Key security improvements:**
+- **No Docker socket access required** - Eliminates privileged container access
+- **API-only monitoring** - Direct HTTP polling of watcher endpoints
+- **Automatic network discovery** - Safe attachment to watcher networks only
+- **Read-only container filesystem** - Immutable runtime environment
+- **Minimal capabilities** - Drops all unnecessary Linux capabilities
+
+The monitor operates entirely through network API calls, requiring no host system access or privileged Docker operations.
 
 ## Non-Goals (Now)
 - Production-hardening (HA, clustering)
@@ -57,9 +66,9 @@ Openly reviewable starting point for Rosen Bridge ecosystem monitor. Enables:
 
 ### 1. Prerequisites
 - Node.js (LTS) OR Docker
-- Bash (for helper scripts)
+- Docker Compose (for container deployment)
+- Running Rosen Bridge watcher containers
 - (Optional) `qrencode` for QR code output
-- (Optional) `curl` (already present inside container image for healthcheck)
 
 ### 2. Clone
 ```bash
@@ -67,46 +76,41 @@ git clone https://github.com/odiseusme/secure-rb-monitor-public.git
 cd secure-rb-monitor-public
 ```
 
-### 3. Create Runtime Config
-```bash
-mkdir -p config
-cp config.json.example config/config.json
-# Edit values if needed
-```
-
-### 4. Prepare Build Setup (Recommended)
-The helper script (`prepare-build.sh`) selects an available port (starting at 8080 by default), updates `.env` (`HOST_PORT`, `HOST_IP`, fallback `MONITOR_PORT`), and prints accessible URLs.
+### 3. Automatic Setup (Recommended)
+The setup script automatically discovers running watcher containers, configures networking, and selects an available port:
 
 ```bash
-./scripts/prepare-build.sh
-# Force rerun:
-FORCE=1 ./scripts/prepare-build.sh
+./scripts/prepare_build.sh
 ```
+
+This script:
+- Discovers all running watcher containers (names containing 'watcher' ending in '-service-1')
+- Generates `config.json` with watcher API endpoints
+- Creates `docker-compose.override.yml` for network access
+- Selects an available port and updates `.env`
+- Displays access URLs
 
 Options:
-- Bind all interfaces:  
-  ```bash
-  BIND_ALL=1 ./scripts/prepare-build.sh
-  ```
-- Auto-open browser:  
-  ```bash
-  OPEN_BROWSER=1 ./scripts/prepare-build.sh
-  ```
-- Show QR code (needs `qrencode`):  
-  ```bash
-  SHOW_QR=1 ./scripts/prepare-build.sh
-  ```
+```bash
+# Bind to all interfaces (accessible from LAN)
+BIND_ALL=1 ./scripts/prepare_build.sh
 
-If you skip this step:
-- Default attempt: host port 8080 (fails if already in use).
+# Auto-open browser after setup
+OPEN_BROWSER=1 ./scripts/prepare_build.sh
+
+# Show QR code for mobile access (requires qrencode)
+SHOW_QR=1 ./scripts/prepare_build.sh
+
+# Force regeneration of config/networks
+FORCE=1 ./scripts/prepare_build.sh
+```
 
 ---
 
-### 5. Run via docker-compose (Preferred)
-Reproducible and sets restart policy + volume mounts.
+### 4. Run via docker-compose (Preferred)
 
 ```bash
-./scripts/prepare-build.sh
+./scripts/prepare_build.sh
 docker compose up -d --build
 ```
 
@@ -115,102 +119,39 @@ Access:
 http://localhost:${HOST_PORT:-8080}/
 ```
 
-Your `docker-compose.yml` (excerpt):
-```yaml
-services:
-  rosen-monitor:
-    build: .
-    restart: always
-    ports:
-      - "${HOST_IP:-127.0.0.1}:${HOST_PORT:-8080}:8080"
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./config:/app/config
-      - ./public:/app/public
-```
+The setup automatically configures network access to your watcher containers.
 
-#### 5.1 Optional: Persistence & Logs
-(If not already created)
+#### 4.1 Optional: Persistence & Logs
 ```bash
 mkdir -p data logs config public
-cp config.json.example config/config.json  # if not done
 ```
 
-#### 5.2 Restart Policy
-- `always`: restarts container even after manual `docker stop` if daemon restarts.
-- `unless-stopped`: similar, but respects a manual stop across daemon restarts.
-
-Change (if desired):
+#### 4.2 Restart Policy
 ```yaml
-restart: unless-stopped
-```
-Recreate:
-```bash
-docker compose up -d
+# In docker-compose.yml - change if desired:
+restart: unless-stopped  # Default: always
 ```
 
 ---
 
-### 6. Run via Docker (Direct Alternative)
-If you prefer not to use Compose.
+### 5. Run via Docker (Direct Alternative)
 
-Build:
 ```bash
+./scripts/prepare_build.sh
+export $(grep HOST_PORT .env | xargs)
+
 docker build -t rb-monitor .
-```
-
-Simple run (assumes 8080 free):
-```bash
-docker run -d \
-  --name rb-monitor \
-  --restart unless-stopped \
-  -p 8080:8080 \
-  rb-monitor
-```
-
-#### 6.1 Reviewer-Friendly Automated Port Selection
-```bash
-./scripts/prepare-build.sh
-export $(grep HOST_PORT .env | xargs)
 docker run -d \
   --name rb-monitor \
   --restart unless-stopped \
   -p ${HOST_PORT:-8080}:8080 \
+  --network watcher_network \
   rb-monitor
 ```
-
-#### 6.2 Persistence (Optional)
-```bash
-mkdir -p monitor-data monitor-logs config public
-cp config.json.example config/config.json
-
-./scripts/prepare-build.sh
-export $(grep HOST_PORT .env | xargs)
-
-docker run -d \
-  --name rb-monitor \
-  --restart unless-stopped \
-  -p ${HOST_PORT:-8080}:8080 \
-  -v "$(pwd)/monitor-data":/app/data \
-  -v "$(pwd)/monitor-logs":/app/logs \
-  -v "$(pwd)/config":/app/config \
-  -v "$(pwd)/public":/app/public \
-  rb-monitor
-```
-
-#### 6.3 Troubleshooting
-- Port already in use → rerun `./scripts/prepare-build.sh`.
-- Not reachable after reboot → check Docker daemon & restart policy.
-- Inspect container:
-  ```bash
-  docker ps -a --filter name=rb-monitor
-  docker logs rb-monitor --tail 50
-  ```
 
 ---
 
-### 7. Run Locally (Two Processes)
+### 6. Run Locally (Two Processes)
 Terminal A:
 ```bash
 node static-server.js
@@ -219,213 +160,157 @@ Terminal B:
 ```bash
 node status-updater.js
 ```
-Access:
-```
-http://localhost:8080
-```
+Access: `http://localhost:8080`
 
-### 8. One-Off Manual Status Update
+### 7. Manual Status Update
 ```bash
 node write_status.js
 ```
 
-### 9. Show URL Helper
+### 8. Adding/Removing Watchers
+When you add or remove watcher containers, regenerate the configuration:
+
 ```bash
-./scripts/show_monitor_url.sh
+./scripts/prepare_build.sh
+docker compose up -d --build
 ```
 
-### 10. Updating Status While Running
-Triggers immediate refresh:
-```bash
-node write_status.js
-```
+The script will automatically discover new watchers and update network configurations.
 
-### 11. Next Steps
-- Extend data sources (`status-updater.js`, `write_status.js`)
+### 9. Next Steps
+- Monitor watcher health and performance
+- Set up alerts for failed watchers (see TODO.md)
+- Customize UI for your specific needs
 - Add metrics/structured logging
-- Harden security (see Hardening section below)
-- Open focused issues/PRs
 
 ---
 
 ## Configuration
-Example:
-```bash
-mkdir -p config
-cp config.json.example config/config.json
-```
-Environment overrides (see `.env.example`) via:
-- `.env` (auto used by docker-compose)
-- `docker run --env-file <file>`
-- Shell exports
 
-`config/config.json` is environment-specific and not committed.
+The system uses automatic configuration discovery, but manual override is possible:
+
+```json
+{
+  "watchers": [
+    {"name": "watcher_3030-service-1", "url": "http://watcher_3030-service-1:3000/info"},
+    {"name": "watcher_3042-service-1", "url": "http://watcher_3042-service-1:3000/info"}
+  ]
+}
+```
+
+Generated automatically by `prepare_build.sh` based on running containers.
 
 ---
 
 ## Architecture Overview
 
 ### Core Data Flow
-1. `status-updater.js` schedules/triggers collection.
-2. `write_status.js` gathers data → writes artifacts.
-3. `static-server.js` serves `public/` + generated artifacts.
+1. `prepare_build.sh` discovers watchers and configures networks
+2. `status-updater.js` schedules periodic collection
+3. `write_status.js` polls watcher APIs → writes `status.json`
+4. `static-server.js` serves UI and status data
 
 ### Scripts
-- `scripts/prepare-build.sh`: selects port, sets up `.env`
-- `scripts/bootstrap.sh`: environment sanity
-- `scripts/serve_public.sh`: wrapper for static server
-- `scripts/show_monitor_url.sh`: prints URLs
+- `scripts/prepare_build.sh`: Auto-discovery, port selection, network setup
+- `scripts/serve_public.sh`: Static server wrapper
+- `scripts/show_monitor_url.sh`: Display access URLs
 
 ### Docker
-Container image:
+Container features:
 - Based on `node:20-alpine`
-- Non-root user `monitor` (UID 100)
-- Docker socket access securely configured (see Hardening section below)
-- HEALTHCHECK hits `/health`
-- Volumes for `data`, `logs`, `config`, `public`
+- Non-root user `monitor`
+- Read-only filesystem
+- No privileged access required
+- Automatic network attachment to watcher networks
 
-> **Security note:**  
-> Mounting the Docker socket grants host introspection. Only do this in trusted, controlled environments.
+### Network Architecture
+The monitor attaches to watcher Docker networks automatically:
+- Discovers watcher containers by name pattern
+- Identifies their Docker networks
+- Generates `docker-compose.override.yml` for network access
+- Polls watcher `/info` endpoints directly over network
 
-### Potential Future Enhancements
-- Pluggable collector framework
-- Metrics exporter (Prometheus / OTEL)
-- TypeScript migration
-- Structured logging + rotation/remote sink
+**Security benefit:** No Docker socket access required - only network-level API communication.
 
 ---
 
 ## Project Layout
 ```
 .
-├── public/                # Static assets
-├── scripts/               # Helper scripts
+├── public/                # Static assets and generated status.json
+├── scripts/               # Helper scripts (discovery, setup)
+├── museum/                # Reference examples (preserved configs)
 ├── status-updater.js      # Periodic orchestration
-├── write_status.js        # Data collection & artifact writing
+├── write_status.js        # API-based data collection
 ├── static-server.js       # Lightweight HTTP server
-├── docker-entrypoint.sh   # Runtime privilege drop + socket group alignment
-├── config.json.example    # Sample runtime config
-├── config/                # Actual runtime config (ignored)
+├── docker-entrypoint.sh   # Simplified privilege management
+├── config.json            # Auto-generated watcher configuration
+├── docker-compose.override.yml  # Auto-generated network config
 ├── docker-compose.yml
-└── Dockerfile
+├── Dockerfile
+└── TODO.md               # Future enhancements
 ```
 
 ---
 
 ## Development Workflow
-1. Install Node (or rely on Docker)
-2. Copy config example → working config
-3. `npm install`
-4. Run server + updater (or Compose)
-5. Edit code, re-run processes
-6. (Optional) Add tests/linting
+1. Install Node.js (or rely on Docker)
+2. Run `./scripts/prepare_build.sh` for automatic setup
+3. Use `docker compose up -d --build` for testing
+4. Edit code, rebuild/restart containers
+5. Re-run setup script when adding/removing watchers
 
-CI: GitHub Actions (baseline soon).
+CI: GitHub Actions (baseline).
 
 ---
 
-## 🛡️ Docker Security Hardening (Best Practice)
+## 🛡️ Security Features
 
-This project is hardened for production and defense-in-depth.
+This monitor is designed with security-first principles:
 
-**Key steps:**
-- Minimize container privileges
-- Protect host/data from container compromise
-- Only required files are writable
+### 1. No Privileged Access Required
+- **No Docker socket mounting** - Eliminates host system access
+- **API-only communication** - Polls watcher HTTP endpoints
+- **Network-level isolation** - Only accesses watcher networks
 
-### 1. Minimal Container Capabilities
-
-`docker-compose.yml`:
+### 2. Minimal Container Privileges
 ```yaml
 cap_drop:
   - ALL
 cap_add:
   - SETGID
   - SETUID
-```
-Drops all Linux capabilities except those needed for privilege changes.
-
----
-
-### 2. Read-Only Root Filesystem
-
-```yaml
 read_only: true
 ```
-Makes the container filesystem immutable except for explicitly mounted volumes.
 
----
+### 3. Secure Network Access
+- Automatically discovers and joins only watcher networks
+- No host network access required
+- Isolated from other Docker networks
 
-### 3. Writable Volumes for App Output
-
-Mount all directories your app writes to:
+### 4. Writable Volumes Only Where Needed
 ```yaml
 volumes:
-  - /var/run/docker.sock:/var/run/docker.sock:ro   # Docker API access
   - ./data:/app/data
   - ./logs:/app/logs
   - ./config:/app/config
-  - ./public:/app/public       # For status.json and UI updates!
+  - ./public:/app/public
 ```
 
----
+### 5. Automatic Configuration
+- No manual network configuration required
+- Reduces configuration errors and security gaps
+- Dynamic discovery of watcher services
 
-### 4. Least-Privilege User With Docker Socket Access
+### 6. Error Handling
+- Gracefully handles unreachable watchers
+- Continues monitoring available services
+- Clear error reporting in status output
 
-Create `monitor` user and add to both its own group and the host’s `docker` group (pass `DOCKER_GID` build arg):
-
-```dockerfile
-ARG DOCKER_GID
-RUN addgroup -g ${DOCKER_GID} docker || true
-RUN addgroup -S monitor && adduser -S monitor -G monitor && addgroup monitor docker
-```
-Monitor runs as non-root but can read the Docker socket.
-
----
-
-### 5. Entrypoint and Permissions
-
-- Copy entrypoint and Node app files
-- Set ownership
-- Run entrypoint as root (to allow privilege drop)
-
-```dockerfile
-COPY docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh
-RUN chown -R monitor:monitor /app
-USER root
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
-CMD ["node", "static-server.js"]
-```
-
----
-
-### 6. Build Instructions
-
-Pass host’s docker group GID:
-```bash
-DOCKER_GID=$(getent group docker | cut -d: -f3)
-docker compose build --build-arg DOCKER_GID=$DOCKER_GID
-```
-
----
-
-### 7. Quick Checklist
-
-- [x] UI, logs, and status output work after hardening
-- [x] Only necessary directories are writable
-- [x] Docker socket access works for non-root monitor user
-- [x] No container privilege escalation risk
-
----
-
-### 8. Troubleshooting
-
-- `EROFS: read-only file system`? Check writable volumes.
-- Docker socket permission errors? Check monitor user’s group membership and socket GID.
-
-_For more info:_  
-See [Docker security best practices](https://docs.docker.com/engine/security/security/) and [least privilege containers](https://docs.docker.com/develop/security/).
+### Troubleshooting
+- **Watchers not discovered**: Check container naming (must contain 'watcher' and end with '-service-1')
+- **Network connection issues**: Re-run `./scripts/prepare_build.sh` to regenerate network config
+- **Permission errors**: Container runs as non-root with minimal capabilities
 
 ---
 
@@ -436,5 +321,4 @@ See `CONTRIBUTING.md` for branching, commit style, and review expectations.
 MIT – see `LICENSE`.
 
 ---
-> Feedback (especially from Rosen Bridge core maintainers) is welcome—open focused issues or PRs.
-
+> Feedback from Rosen Bridge core maintainers and security reviewers is welcome—open focused issues or PRs.

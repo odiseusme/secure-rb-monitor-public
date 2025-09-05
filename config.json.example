@@ -7,7 +7,6 @@
   },
   "docker": {
     "enabled": true,
-    "socketPath": "/var/run/docker.sock"
   },
   "logging": {
     "level": "info",

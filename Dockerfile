@@ -25,7 +25,8 @@ COPY package*.json ./
 RUN npm ci --only=production && npm cache clean --force
 
 # App files
-COPY write_status.js static-server.js status-updater.js ./
+COPY write_status.js write_status_api.js static-server.js status-updater.js ./
+COPY config.json ./
 COPY public/ ./public/
 COPY config.json.example ./config/config.json
 

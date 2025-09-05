@@ -1,0 +1,11 @@
+services:
+  rosen-monitor:
+    networks:
+      - watcher_3042_rosen_network
+      - watcher_3030_rosen_network
+
+networks:
+  watcher_3042_rosen_network:
+    external: true
+  watcher_3030_rosen_network:
+    external: true

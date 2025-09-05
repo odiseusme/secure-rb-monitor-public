@@ -2,23 +2,23 @@
 // Status data generator for remote Rosen Bridge monitoring
 // Creates status.json for access from any PC or mobile device
 // Optimized for static hosting and cloud deployment
+// API-ONLY VERSION - No Docker socket dependency
 
 const fs = require('fs');
 const path = require('path');
-const { exec } = require('child_process');
 
 // Safe fetch fallback (built-in or node-fetch)
 let fetch;
 try {
   fetch = globalThis.fetch;
   if (!fetch) throw new Error('No built-in fetch');
-  console.log('[NETWORK] Using fetch module');
+  console.log('[NETWORK] Using built-in fetch');
 } catch {
   try {
     fetch = require('node-fetch');
-    console.log('[NETWORK] Using fetch module');
+    console.log('[NETWORK] Using node-fetch module');
   } catch (err) {
-    console.error('[ERROR]');
+    console.error('[ERROR] No fetch implementation available');
     process.exit(1);
   }
 }
@@ -27,8 +27,8 @@ try {
 let CONFIG = {
   statusFile: path.join(__dirname, 'public', 'status.json'),
   ergoExplorerApi: 'https://api.ergoplatform.com',
-  dockerCmd: null,
-  timeout: 10000  // Increased to 10s
+  timeout: 10000,
+  watchers: []
 };
 
 // Mutex to prevent overlapping cycles
@@ -46,16 +46,6 @@ if (fs.existsSync(configPath)) {
   }
 }
 
-// Run shell command with timeout
-function run(cmd, timeoutMs = 10000) {
-  return new Promise((resolve, reject) => {
-    exec(cmd, { timeout: timeoutMs }, (err, stdout) => {
-      if (err) return reject(err);
-      resolve(stdout.trim());
-    });
-  });
-}
-
 // Retry helper with jittered backoff
 async function withRetry(fn, maxRetries = 1, baseDelay = 500) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -71,56 +61,17 @@ async function withRetry(fn, maxRetries = 1, baseDelay = 500) {
   }
 }
 
-// Concurrency limiter
-async function mapWithConcurrency(items, fn, limit = 4) {
-  const results = [];
-  for (let i = 0; i < items.length; i += limit) {
-    const batch = items.slice(i, i + limit);
-    const batchPromises = batch.map(fn);
-    const batchResults = await Promise.allSettled(batchPromises);
-    
-    for (const result of batchResults) {
-      if (result.status === 'fulfilled') {
-        results.push(result.value);
-      } else {
-        console.error('Batch item failed:', result.reason?.message || result.reason);
-        results.push({
-          errors: [`Collection failed: ${result.reason?.message || 'Unknown error'}`],
-          healthStatus: 'unknown',
-          permitStatus: 'unknown'
-        });
-      }
-    }
-  }
-  return results;
-}
-
-// Auto-detect Docker
-async function findDocker() {
-  if (CONFIG.dockerCmd) {
-    try {
-      await run(`${CONFIG.dockerCmd} --version`);
-      return CONFIG.dockerCmd;
-    } catch {
-      console.warn(`  Configured docker path ${CONFIG.dockerCmd} not working, auto-detecting...`);
-    }
-  }
-  const dockerPaths = ['docker', '/snap/bin/docker', '/usr/bin/docker'];
-  for (const path of dockerPaths) {
-    try {
-      await run(`${path} --version`);
-      console.log(` Found Docker at: ${path}`);
-      return path;
-    } catch {}
-  }
-  throw new Error('Docker not found!');
-}
-
 // Fetch JSON from URL with retry logic
 async function fetchJson(url, headers = {}, retries = 2) {
   for (let i = 0; i <= retries; i++) {
     try {
-      const res = await fetch(url, { headers, timeout: CONFIG.timeout });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), CONFIG.timeout);
+      const res = await fetch(url, { 
+        headers, 
+        signal: controller.signal 
+      });
+      clearTimeout(timer);
       if (!res.ok) throw new Error(`${url} → ${res.status} ${res.statusText}`);
       return await res.json();
     } catch (err) {
@@ -170,90 +121,42 @@ async function getAllBalances(address, rsnTokenId, eRsnTokenId) {
   }
 }
 
-// General watcher discovery
-async function discoverWatchers(dockerCmd) {
-  try {
-    console.log('[SEARCH] Getting container list...');
-    const output = await run(`${dockerCmd} ps --format "{{.Names}}\t{{.Ports}}"`);
-    if (!output || output.trim() === '') {
-      console.warn('[WARN] No containers found');
-      return [];
-    }
-    
-    const lines = output.split('\n').filter(line => line.trim());
-    const containers = {};
-    
-    lines.forEach(line => {
-      const parts = line.split('\t');
-      if (parts.length >= 2) {
-        const name = parts[0].trim();
-        const ports = parts[1].trim();
-        containers[name] = ports;
-      }
-    });
-    
-    console.log(' Found containers:', Object.keys(containers));
-    const watchers = [];
-    
-    for (const [serviceName, servicePorts] of Object.entries(containers)) {
-      if (serviceName.includes('-service-1')) {
-        console.log(` Processing service container: ${serviceName}`);
-        const baseName = serviceName.replace('-service-1', '');
-        const uiName = `${baseName}-ui-1`;
-        
-        if (containers[uiName]) {
-          const uiPorts = containers[uiName];
-          const portMatch = uiPorts.match(/:(\d+)->/);
-          const port = portMatch ? parseInt(portMatch[1], 10) : 3000;
-          console.log(` Found watcher with port ${port}`);
-          watchers.push({ 
-            name: serviceName, 
-            container: serviceName, 
-            port, 
-            network: 'unknown' 
-          });
-        } else {
-          console.warn(`  No UI container found for service: ${serviceName}, using port 3000`);
-          watchers.push({ 
-            name: serviceName, 
-            container: serviceName, 
-            port: 3000, 
-            network: 'unknown' 
-          });
-        }
-      }
-    }
-    
-    console.log(` Discovered ${watchers.length} watchers total`);
-    return watchers;
-  } catch (err) {
-    console.error(' Error discovering watchers:', err.message);
-    return [];
-  }
+// Calculate permit status with rich data format (preserving original detailed format)
+function calculatePermitStatus(activeRaw, totalRaw, permitsPerEvent = 3000000) {
+  const ppe = Math.max(1, Number(permitsPerEvent));
+  const activeBlocks = Math.floor(Number(activeRaw) / ppe);
+  const totalBlocks = Math.floor(Number(totalRaw) / ppe);
+  
+  let status = 'sufficient';
+  if (activeBlocks <= 0) status = 'exhausted';
+  else if (activeBlocks === 1) status = 'critical';
+
+  return {
+    status,
+    message: status.charAt(0).toUpperCase() + status.slice(1),
+    utilization: totalBlocks > 0 ? (totalBlocks - activeBlocks) / totalBlocks : 0,
+    available: activeBlocks,
+    total: totalBlocks,
+    blocks: { 
+      available: activeBlocks, 
+      total: totalBlocks 
+    },
+    raw: { 
+      available: Number(activeRaw), 
+      total: Number(totalRaw) 
+    },
+    permitsPerEvent: ppe
+  };
 }
 
-// Docker info with retry helper - FIXED
-async function dockerInfoWithRetry(dockerCmd, container, maxAttempts = 2) {
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      const out = await run(`${dockerCmd} exec ${container} curl -s --max-time 8 http://localhost:3000/info`, 10000);
-      if (out && out.trim()) return out.trim();
-    } catch (e) {
-      if (i === maxAttempts - 1) throw e;
-      await new Promise(r => setTimeout(r, 200 + Math.floor(Math.random() * 400)));
-    }
-  }
-  return '';
-}
-
-// Collect status from inside container
-async function collectWatcherStatus(watcher, dockerCmd) {
+// Collect watcher status via API (no Docker)
+async function collectWatcherStatus(watcher) {
   const result = {
     name: watcher.name,
-    port: watcher.port,
-    network: watcher.network,
-    container: watcher.container,
-    containerStatus: 'unknown',
+    port: extractPortFromName(watcher.name),
+    network: watcher.network || 'unknown',
+    container: watcher.name,
+    containerStatus: 'running', // Assume running if we can reach it
     healthStatus: 'unknown',
     permitStatus: 'unknown',
     currentBalance: null,
@@ -263,51 +166,29 @@ async function collectWatcherStatus(watcher, dockerCmd) {
   };
 
   try {
-    // Check container status with retry
-    const containerStatus = await withRetry(
-      () => run(`${dockerCmd} inspect ${watcher.container} --format='{{.State.Status}}'`, 10000),
-      1, 400
-    );
-    result.containerStatus = containerStatus || 'unknown';
-
-    // Get watcher info with retry
-    const infoRaw = await withRetry(
-      () => run(`${dockerCmd} exec ${watcher.container} curl -s --max-time 8 http://localhost:3000/info`, 10000),
-      1, 500
-    );
-
-    if (!infoRaw || !infoRaw.trim()) {
-      throw new Error('Empty response from watcher API');
-    }
-
-    let info;
-    try {
-      info = JSON.parse(infoRaw);
-    } catch (e) {
-      throw new Error('Invalid JSON from watcher API');
-    }
+    // Get watcher info from API
+    const info = await withRetry(async () => {
+      return await fetchJson(watcher.url);
+    }, 1, 500);
 
     // Health status
-    result.healthStatus = (info?.health?.status) || 'unknown';
+    result.healthStatus = info?.health?.status || 'unknown';
 
-    // Network (override discovery 'unknown')
+    // Network (override if provided by API)
     if (info.network) {
       result.network = info.network;
     }
 
-    // Permits
+    // Permit processing with rich format
     if (info.permitCount && 
-        typeof info.permitCount.active !== 'undefined' && 
-        typeof info.permitCount.total !== 'undefined') {
+        info.permitCount.active !== undefined && 
+        info.permitCount.total !== undefined) {
       
-      const active = info.permitCount.active;
-      const total = info.permitCount.total;
-      const totalBlocks = Math.floor(total / 3000000);
-      let availableBlocks = Math.floor(active / 3000000);
-      if (active === total) availableBlocks = totalBlocks;
+      const activeRaw = info.permitCount.active;
+      const totalRaw = info.permitCount.total;
+      const permitsPerEvent = info.permitsPerEvent || 3000000;
 
-      result.permitStatus = availableBlocks === 0 ? 'degraded' :
-                           availableBlocks < totalBlocks ? 'partial' : 'healthy';
+      result.permitStatus = calculatePermitStatus(activeRaw, totalRaw, permitsPerEvent);
     }
 
     // Fetch balances from Ergo Explorer if we have the needed info
@@ -334,61 +215,39 @@ async function collectWatcherStatus(watcher, dockerCmd) {
 
   } catch (err) {
     result.errors.push(err.message || String(err));
-    console.error(`    ${watcher.container}: ${err.message}`);
+    result.containerStatus = 'unknown';
+    result.healthStatus = 'unknown';
+    console.error(`    ${watcher.name}: ${err.message}`);
   }
 
   return result;
 }
 
-// Calculate permit status (backward-compatible).
-// Legacy: calculatePermitStatus(availableBlocks, totalBlocks, permitsPerEvent)
-// New:    calculatePermitStatus({ activeRaw, totalRaw, permitsPerEvent })
-function calculatePermitStatus(a, b, c) {
-  // New API: object with raw permits
-  if (a && typeof a === 'object') {
-    const activeRaw = Number(a.activeRaw || 0);
-    const totalRaw = Number(a.totalRaw || 0);
-    const ppe = Math.max(1, Number(a.permitsPerEvent || 3000000));
+// Extract port from watcher name (e.g., "watcher_3030-service-1" -> 3030)
+function extractPortFromName(name) {
+  const match = name.match(/watcher_(\d+)/);
+  return match ? parseInt(match[1], 10) : 3000;
+}
 
-    const availableBlocks = Math.floor(activeRaw / ppe);
-    const totalBlocks = Math.floor(totalRaw / ppe);
+// Concurrency-controlled batch processing
+async function runBatches(thunks, limit) {
+  const results = new Array(thunks.length);
+  let i = 0;
 
-    let status = 'sufficient';
-    if (availableBlocks <= 0) status = 'exhausted';
-    else if (availableBlocks === 1) status = 'critical';
+  const workers = Array.from({ length: Math.max(1, limit) }, async () => {
+    while (true) {
+      const idx = i++;
+      if (idx >= thunks.length) break;
+      try {
+        results[idx] = await thunks[idx]();
+      } catch (err) {
+        results[idx] = { error: String(err?.message || err) };
+      }
+    }
+  });
 
-    return {
-      status,
-      message: status.charAt(0).toUpperCase() + status.slice(1),
-      utilization: 0,
-      // Display counts in *permits* (blocks) for the UI:
-      available: availableBlocks,
-      total: totalBlocks,
-      // Keep both for debugging / future use:
-      blocks: { available: availableBlocks, total: totalBlocks },
-      raw: { available: activeRaw, total: totalRaw },
-      permitsPerEvent: ppe
-    };
-  }
-
-  // Legacy API: numbers = blocks
-  const availableBlocks = Number(a || 0);
-  const totalBlocks = Number(b || 0);
-  const ppe = Math.max(1, Number(c || 3000000));
-
-  let status = 'sufficient';
-  if (availableBlocks <= 0) status = 'exhausted';
-  else if (availableBlocks === 1) status = 'critical';
-
-  return {
-    status,
-    message: status.charAt(0).toUpperCase() + status.slice(1),
-    utilization: 0,
-    available: availableBlocks, // legacy behavior (blocks)
-    total: totalBlocks,         // legacy behavior (blocks)
-    blocks: { available: availableBlocks, total: totalBlocks },
-    permitsPerEvent: ppe
-  };
+  await Promise.all(workers);
+  return results;
 }
 
 // Main execution
@@ -401,88 +260,36 @@ function calculatePermitStatus(a, b, c) {
     }
     updateInProgress = true;
 
-    const dockerCmd = await findDocker();
-    console.log('[SEARCH] Getting container list...');
-    const watchers = await discoverWatchers(dockerCmd);
-    console.log(` Discovered ${watchers.length} watchers`);
+    // Get watchers from config
+    const watchers = CONFIG.watchers || [];
+    console.log(`[API] Discovered ${watchers.length} watchers from configuration`);
 
     if (!watchers.length) {
-      console.warn('[WARN] No watchers found');
+      console.warn('[WARN] No watchers found in configuration');
       return;
     }
 
-    // Process watchers with concurrency limit of 4 (real cap, no pre-start)
+    // Process watchers with concurrency limit
     const CONCURRENCY = Number(process.env.COLLECT_CONCURRENCY || 4);
     console.log(`[COLLECT] Processing ${watchers.length} watchers with concurrency=${CONCURRENCY}...`);
 
-    async function runBatches(thunks, limit) {
-      const results = new Array(thunks.length);
-      let i = 0;
-
-      const workers = Array.from({ length: Math.max(1, limit) }, async () => {
-        while (true) {
-          const idx = i++;
-          if (idx >= thunks.length) break;
-          try {
-            results[idx] = await thunks[idx]();
-          } catch (err) {
-            results[idx] = { error: String(err?.message || err) };
-          }
-        }
-      });
-
-      await Promise.all(workers);
-      return results;
-    }
-
-    // Build thunks WITHOUT starting requests yet
+    // Build thunks for concurrent processing
     const watcherThunks = watchers.map(watcher => async () =>
-      collectWatcherStatus(watcher, dockerCmd)
+      collectWatcherStatus(watcher)
     );
 
-    // Run with true concurrency cap
+    // Run with concurrency control
     const watcherResults = await runBatches(watcherThunks, CONCURRENCY);
 
     const results = {};
 
-    // Process results and fix permit status format for HTML
+    // Process results
     for (let i = 0; i < watcherResults.length; i++) {
       const watcher = watchers[i];
       const watcherData = watcherResults[i];
 
       console.log(` Processing result for ${watcher.name}...`);
-
-      // Fix permit status format for HTML if needed
-      if (watcherData.permitStatus === 'healthy' ||
-          watcherData.permitStatus === 'partial' ||
-          watcherData.permitStatus === 'degraded') {
-
-        try {
-          const infoRaw = await dockerInfoWithRetry(dockerCmd, watcher.container, 2);
-          if (infoRaw) {
-            const info = JSON.parse(infoRaw);
-            if (info.permitCount && info.permitsPerEvent) {
-              const activeRaw = info.permitCount.active || 0;
-              const totalRaw  = info.permitCount.total  || 0;
-              const permitsPerBlock = info.permitsPerEvent || 3000000;
-
-              const totalBlocks = Math.floor(totalRaw / permitsPerBlock);
-              let availableBlocks = Math.floor(activeRaw / permitsPerBlock);
-              if (activeRaw === totalRaw) availableBlocks = totalBlocks;
-
-              watcherData.permitStatus = calculatePermitStatus({
-                activeRaw: activeRaw,
-                totalRaw: totalRaw,
-                permitsPerEvent: permitsPerBlock
-              });
-            }
-          }
-        } catch (err) {
-          console.warn(`  Failed to get detailed permit info for ${watcher.name}: ${err.message}`);
-        }
-      }
-
-      results[watcher.container] = watcherData;
+      results[watcher.name] = watcherData;
     }
 
     // Calculate summary stats
