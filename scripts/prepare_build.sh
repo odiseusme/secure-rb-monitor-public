@@ -93,6 +93,20 @@ discover_watchers_and_generate_files() {
   local service_names
   service_names=$(docker ps --format '{{.Names}}' | awk '/watcher/ && /-service-1$/')
 
+  # Validate container names
+  local valid_pattern="^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
+  local invalid_names=()
+  for name in $service_names; do
+    if [[ ! "$name" =~ $valid_pattern ]]; then
+      invalid_names+=("$name")
+    fi
+  done
+
+  if [ ${#invalid_names[@]} -gt 0 ]; then
+    log "Error: Invalid container names detected: ${invalid_names[*]}"
+    exit 1
+  fi
+
   if [ -z "$service_names" ]; then
     log "No watchers found; not generating config.json or override."
     return 0
