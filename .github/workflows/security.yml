@@ -66,14 +66,27 @@ jobs:
         run: |
           npm audit || true
 
-      # Placeholder for additional security tools
-      - name: Run additional security tools
+      # Install and run Trivy
+      - name: Install Trivy
         run: |
-          echo "No additional security tools configured yet."
-          # Uncomment and configure tools like Trivy, Gitleaks, or Semgrep:
-          # trivy fs .
-          # gitleaks detect --source .
-          # semgrep --config p/ci .
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+      - name: Run Trivy vulnerability scan
+        run: trivy fs . || true
+
+      # Install and run Gitleaks
+      - name: Install Gitleaks
+        run: |
+          curl -sSfL https://github.com/zricethezav/gitleaks/releases/download/v8.17.0/gitleaks-linux-amd64 -o gitleaks
+          chmod +x gitleaks
+          mv gitleaks /usr/local/bin/gitleaks
+      - name: Run Gitleaks secret scan
+        run: gitleaks detect --source . || true
+
+      # Install and run Semgrep
+      - name: Install Semgrep
+        run: pip install semgrep
+      - name: Run Semgrep static analysis
+        run: semgrep --config p/ci . || true
 
       # Generate workflow summary
       - name: Generate workflow summary
