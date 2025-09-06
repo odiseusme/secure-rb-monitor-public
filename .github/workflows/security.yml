@@ -1,0 +1,54 @@
+name: Security Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: '0 3 * * 0' # Run weekly on Sundays at 3 AM UTC
+
+jobs:
+  security:
+    name: Security Checks
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 'lts/*'
+
+    - name: Install Dependencies
+      run: npm ci
+
+    - name: Run npm audit (Dependency Vulnerabilities)
+      run: npm audit --audit-level=moderate
+
+    - name: Trivy Scan (Filesystem & Container)
+      uses: aquasecurity/trivy-action@v0.8.0
+      with:
+        scan-type: 'fs'
+        exit-code: '1'
+
+    - name: Gitleaks Secret Detection
+      uses: zricethezav/gitleaks-action@v1.1.0
+      with:
+        config-path: ''
+
+    - name: Semgrep Static Analysis
+      uses: returntocorp/semgrep-action@v1.10.0
+      with:
+        config: p/security-audit
+
+    - name: Docker Bench Security Check
+      run: |
+        docker run --rm \
+        --privileged \
+        --net host \
+        docker/docker-bench-security
