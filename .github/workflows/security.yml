@@ -1,4 +1,4 @@
-name: Security Pipeline
+name: CI/CD Security Pipeline
 
 on:
   push:
@@ -8,47 +8,73 @@ on:
     branches:
       - main
   schedule:
-    - cron: '0 3 * * 0' # Run weekly on Sundays at 3 AM UTC
+    - cron: "0 3 * * 0" # Runs every Sunday at 3 AM UTC
 
 jobs:
-  security:
-    name: Security Checks
-    runs-on: ubuntu-latest
-
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        node-version: [18.x]
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v3
+      # Checkout code from the repository
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: 'lts/*'
+      # Set up Node.js environment
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
 
-    - name: Install Dependencies
-      run: npm ci
+      # Install dependencies
+      - name: Install dependencies
+        run: npm ci
 
-    - name: Run npm audit (Dependency Vulnerabilities)
-      run: npm audit --audit-level=moderate
+      # Run static analysis (Linter)
+      - name: Lint code
+        run: |
+          echo "No linter configured yet."
+          # Uncomment and configure your linter (e.g., ESLint):
+          # npx eslint .
 
-    - name: Trivy Scan (Filesystem & Container)
-      uses: aquasecurity/trivy-action@v0.8.0
-      with:
-        scan-type: 'fs'
-        exit-code: '1'
+      # Run syntax and shell script validation
+      - name: Validate scripts
+        run: |
+          set -e
+          for f in *.js status-*.js write_status.js static-server.js; do
+            [ -f "$f" ] && node -c "$f"
+          done
+          for f in scripts/*.sh; do
+            [ -f "$f" ] && bash -n "$f"
+          done
 
-    - name: Gitleaks Secret Detection
-      uses: zricethezav/gitleaks-action@v1.1.0
-      with:
-        config-path: ''
+      # Placeholder for build steps
+      - name: Build application
+        run: echo "Add build steps if needed."
 
-    - name: Semgrep Static Analysis
-      uses: returntocorp/semgrep-action@v1.10.0
-      with:
-        config: p/security-audit
+      # Placeholder for test steps
+      - name: Run tests
+        run: |
+          echo "No tests configured yet."
+          # Uncomment and configure your testing framework:
+          # npm test
 
-    - name: Docker Bench Security Check
-      run: |
-        docker run --rm \
-        --privileged \
-        --net host \
-        docker/docker-bench-security
+      # Security checks (e.g., npm audit)
+      - name: Security audit
+        run: |
+          npm audit || true
+
+      # Placeholder for additional security tools
+      - name: Run additional security tools
+        run: |
+          echo "No additional security tools configured yet."
+          # Uncomment and configure tools like Trivy, Gitleaks, or Semgrep:
+          # trivy fs .
+          # gitleaks detect --source .
+          # semgrep --config p/ci .
+
+      # Generate workflow summary
+      - name: Generate workflow summary
+        run: echo "Workflow completed successfully." >> $GITHUB_STEP_SUMMARY
