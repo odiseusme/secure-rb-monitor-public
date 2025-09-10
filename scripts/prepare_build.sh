@@ -91,8 +91,7 @@ discover_watchers_and_generate_files() {
   log "Discovering watcher service containers…"
   # Generalized match: any running container with 'watcher' in its name and ending in -service-1
   local service_names
-  service_names=$(docker ps --format '{{.Names}}' | awk '/watcher/ && /-service-1$/')
-
+  service_names=$(docker ps --format '{{.Names}}' | awk '/-service-1$/')
   if [ -z "$service_names" ]; then
     log "No watchers found; not generating config.json or override."
     return 0
