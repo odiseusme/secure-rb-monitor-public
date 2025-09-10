@@ -8,24 +8,19 @@ _Current focus:_
 - Automatic watcher discovery and network configuration
 - Simple bootstrap scripts for local/container usage
 
-> Status: v0.3 (Security-hardened API-only architecture). Expect rapid iteration; APIs & structure may evolve.
+> Status: v0.4 (Security-hardened API-only architecture). Expect rapid iteration; APIs & structure may evolve.
 
 ## Table of Contents
 - [Purpose](#purpose)
 - [Security Architecture](#security-architecture)
 - [Non-Goals (Now)](#non-goals-now)
 - [Quick Start](#quick-start)
-  - [1. Prerequisites](#1-prerequisites)
-  - [2. Clone](#2-clone)
-  - [3. Automatic Setup (Recommended)](#3-automatic-setup-recommended)
-  - [4. Run via docker-compose (Preferred)](#4-run-via-docker-compose-preferred)
-    - [4.1 Optional: Persistence & Logs](#41-optional-persistence--logs)
-    - [4.2 Restart Policy](#42-restart-policy)
-  - [5. Run via Docker (Direct Alternative)](#5-run-via-docker-direct-alternative)
-  - [6. Run Locally (Two Processes)](#6-run-locally-two-processes)
-  - [7. Manual Status Update](#7-manual-status-update)
-  - [8. Adding/Removing Watchers](#8-addingremoving-watchers)
-  - [9. Next Steps](#9-next-steps)
+  - [Prerequisites](#prerequisites)
+  - [Normal Workflow (3 Steps)](#normal-workflow-3-steps)
+  - [Advanced Setup Options](#advanced-setup-options)
+  - [Alternative Deployment Methods](#alternative-deployment-methods)
+  - [Maintenance Commands](#maintenance-commands)
+  - [Optional: Persistence & Custom Directories](#optional-persistence--custom-directories)
 - [Configuration](#configuration)
 - [Architecture Overview](#architecture-overview)
   - [Core Data Flow](#core-data-flow)
@@ -64,38 +59,48 @@ The monitor operates entirely through network API calls, requiring no host syste
 
 ## Quick Start
 
-### 1. Prerequisites
+### Prerequisites
 - Node.js (LTS) OR Docker
 - Docker Compose (for container deployment)
 - Running Rosen Bridge watcher containers
 - (Optional) `qrencode` for QR code output
 
-### 2. Clone
+### Normal Workflow (3 Steps)
+
+**For most users - this is all you need:**
+
 ```bash
+# 1. Clone
 git clone https://github.com/odiseusme/secure-rb-monitor-public.git
 cd secure-rb-monitor-public
-```
 
-### 3. Automatic Setup (Recommended)
-The setup script automatically discovers running watcher containers, configures networking, and selects an available port:
-
-```bash
+# 2. Auto-discover and configure
 ./scripts/prepare_build.sh
+
+# 3. Build and run (background)
+docker compose up -d --build
 ```
 
-This script:
-- Discovers all running watcher containers (names containing 'watcher' ending in '-service-1')
-- Generates `config.json` with watcher API endpoints
+**Access:** normally (unless 8080 is taken) `http://localhost:${HOST_PORT:-8080}/`
+
+The setup script automatically:
+- Discovers all running watcher containers
+- Generates `config.json` with watcher API endpoints  
 - Creates `docker-compose.override.yml` for network access
 - Selects an available port and updates `.env`
 - Displays access URLs
 
-Options:
+---
+
+### Advanced Setup Options
+
+You can customize the setup script with environment variables:
+
 ```bash
 # Bind to all interfaces (accessible from LAN)
 BIND_ALL=1 ./scripts/prepare_build.sh
 
-# Auto-open browser after setup
+# Auto-open browser after setup  
 OPEN_BROWSER=1 ./scripts/prepare_build.sh
 
 # Show QR code for mobile access (requires qrencode)
@@ -107,35 +112,11 @@ FORCE=1 ./scripts/prepare_build.sh
 
 ---
 
-### 4. Run via docker-compose (Preferred)
+### Alternative Deployment Methods
 
-```bash
-./scripts/prepare_build.sh
-docker compose up -d --build
-```
+If you can't use Docker Compose, here are other options:
 
-Access:
-```
-http://localhost:${HOST_PORT:-8080}/
-```
-
-The setup automatically configures network access to your watcher containers.
-
-#### 4.1 Optional: Persistence & Logs
-```bash
-mkdir -p data logs config public
-```
-
-#### 4.2 Restart Policy
-```yaml
-# In docker-compose.yml - change if desired:
-restart: unless-stopped  # Default: always
-```
-
----
-
-### 5. Run via Docker (Direct Alternative)
-
+#### Option A: Direct Docker Run
 ```bash
 ./scripts/prepare_build.sh
 export $(grep HOST_PORT .env | xargs)
@@ -149,25 +130,22 @@ docker run -d \
   rb-monitor
 ```
 
----
-
-### 6. Run Locally (Two Processes)
+#### Option B: Local Node.js (Development)
 Terminal A:
 ```bash
 node static-server.js
 ```
-Terminal B:
+Terminal B:  
 ```bash
 node status-updater.js
 ```
 Access: `http://localhost:8080`
 
-### 7. Manual Status Update
-```bash
-node write_status.js
-```
+---
 
-### 8. Adding/Removing Watchers
+### Maintenance Commands
+
+#### Adding/Removing Watchers
 When you add or remove watcher containers, regenerate the configuration:
 
 ```bash
@@ -177,7 +155,40 @@ docker compose up -d --build
 
 The script will automatically discover new watchers and update network configurations.
 
-### 9. Next Steps
+#### Manual Status Update
+```bash
+node write_status.js
+```
+
+#### View Logs
+```bash
+# Live logs
+docker compose logs -f
+
+# Recent logs
+docker compose logs --tail=50
+```
+
+#### Stop/Restart
+```bash
+# Stop
+docker compose down
+
+# Restart
+docker compose up -d --build
+```
+
+---
+
+### Optional: Persistence & Custom Directories
+
+```bash
+mkdir -p data logs config public
+```
+
+These directories will be mounted as volumes for persistent data storage.
+
+**Next Steps:**
 - Monitor watcher health and performance
 - Set up alerts for failed watchers (see TODO.md)
 - Customize UI for your specific needs
@@ -318,9 +329,8 @@ volumes:
 See `CONTRIBUTING.md` for branching, commit style, and review expectations.
 
 ## License
-MIT – see `LICENSE`.
+MIT — see `LICENSE`.
 
 ---
 
 > Feedback from Rosen Bridge core maintainers and security reviewers is welcome—open focused issues or PRs.
-
