@@ -319,7 +319,7 @@ volumes:
 - Clear error reporting in status output
 
 ### Troubleshooting
-- **Watchers not discovered**: Check container naming (must contain 'watcher' and end with '-service-1')
+- **Watchers not discovered**: Check container naming (must end with '-service-1')
 - **Network connection issues**: Re-run `./scripts/prepare_build.sh` to regenerate network config
 - **Permission errors**: Container runs as non-root with minimal capabilities
 
