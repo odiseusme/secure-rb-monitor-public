@@ -21,3 +21,7 @@ public/status.json
 archive/.env.bak*
 .env
 config/config.json
+config.json
+docker-compose.override.yml
+museum/poll-all-services.sh
+museum/nano poll-all-services.sh
