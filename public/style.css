@@ -229,6 +229,7 @@ body {
 .permit-sufficient { color: #10B981; font-weight: 600; }  /* Green for sufficient (2+) */
 .permit-critical { color: #F59E0B; font-weight: 600; }    /* Orange for critical (1) */
 .permit-exhausted { color: #EF4444; font-weight: 600; }   /* Red for exhausted (0) */
+.permit-Watcher\ Down { color: #ff1744; font-weight: bold; } /* Vivid Red for watcher down (-) */
 
 /* Permit Status Box - UPDATED with clear logic */
 .permit-status {
@@ -244,6 +245,7 @@ body {
 .permit-idle { background: #F9FAFB; color: #374151; border-left: 4px solid #6B7280; }
 .permit-unknown { background: #F3F4F6; color: #4B5563; border-left: 4px solid #9CA3AF; }
 .permit-out-of-permits { background: #1F2937; color: #F3F4F6; border-left: 4px solid #111827; }
+.permit-watcher-down { color: #ff1744; font-weight: bold; }
 
 /* ------------------------------
    Balances + Alerts
@@ -286,6 +288,7 @@ body {
 .health-green { color: #10b981; font-weight: 600; }
 .health-orange { color: #f59e0b; font-weight: 600; }
 .health-red   { color: #ef4444; font-weight: 600; }
+.health-down { color: #ff1744; font-weight: bold; }
 
 /* ------------------------------
    Summary Groups

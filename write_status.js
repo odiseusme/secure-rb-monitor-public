@@ -158,7 +158,7 @@ async function collectWatcherStatus(watcher) {
     container: watcher.name,
     containerStatus: 'running', // Assume running if we can reach it
     healthStatus: 'unknown',
-    permitStatus: 'unknown',
+    permitStatus: { status: 'unknown', message: 'No data' },
     currentBalance: null,
     rsnBalance: null,
     eRsnBalance: null,
@@ -171,28 +171,33 @@ async function collectWatcherStatus(watcher) {
       return await fetchJson(watcher.url);
     }, 1, 500);
 
-    // Health status
-    result.healthStatus = info?.health?.status || 'unknown';
+    // If info is missing or health status is missing, treat as down!
+    if (!info || !info.health || !info.health.status) {
+      result.healthStatus = 'Watcher Down';
+      result.permitStatus = { status: 'Watcher Down', message: 'Watcher Down' };
+    } else {
+      result.healthStatus = info.health.status;
+
+      // Permit processing with rich format
+      if (info.permitCount && 
+          info.permitCount.active !== undefined && 
+          info.permitCount.total !== undefined) {
+        
+        const activeRaw = info.permitCount.active;
+        const totalRaw = info.permitCount.total;
+        const permitsPerEvent = info.permitsPerEvent || 3000000;
+
+        result.permitStatus = calculatePermitStatus(activeRaw, totalRaw, permitsPerEvent);
+      }
+    }
 
     // Network (override if provided by API)
-    if (info.network) {
+    if (info && info.network) {
       result.network = info.network;
     }
 
-    // Permit processing with rich format
-    if (info.permitCount && 
-        info.permitCount.active !== undefined && 
-        info.permitCount.total !== undefined) {
-      
-      const activeRaw = info.permitCount.active;
-      const totalRaw = info.permitCount.total;
-      const permitsPerEvent = info.permitsPerEvent || 3000000;
-
-      result.permitStatus = calculatePermitStatus(activeRaw, totalRaw, permitsPerEvent);
-    }
-
     // Fetch balances from Ergo Explorer if we have the needed info
-    if (info.address && info.rsnTokenId && info.eRsnTokenId) {
+    if (info && info.address && info.rsnTokenId && info.eRsnTokenId) {
       console.log(`    Fetching balances from Ergo Explorer for ${info.address}...`);
       const balances = await withRetry(async () => {
         return await getAllBalances(info.address, info.rsnTokenId, info.eRsnTokenId);
@@ -201,22 +206,20 @@ async function collectWatcherStatus(watcher) {
       result.currentBalance = balances.ergBalance;
       result.rsnBalance = balances.rsnBalance;
       result.eRsnBalance = balances.eRsnBalance;
-    } else {
-      // Fallback to watcher API for ERG balance only
-      if (typeof info.currentBalance !== 'undefined') {
-        result.currentBalance = +(info.currentBalance / 1e9).toFixed(6);
-      }
+    } else if (info && typeof info.currentBalance !== 'undefined') {
+      result.currentBalance = +(info.currentBalance / 1e9).toFixed(6);
     }
 
     // Trial errors
-    if (Array.isArray(info.health?.trialErrors)) {
+    if (info && Array.isArray(info.health?.trialErrors)) {
       result.errors.push(...info.health.trialErrors);
     }
 
   } catch (err) {
     result.errors.push(err.message || String(err));
     result.containerStatus = 'unknown';
-    result.healthStatus = 'unknown';
+    result.healthStatus = 'Watcher Down';
+    result.permitStatus = { status: 'Watcher Down', message: 'Watcher Down' };
     console.error(`    ${watcher.name}: ${err.message}`);
   }
 
@@ -298,7 +301,7 @@ async function runBatches(thunks, limit) {
       total: watcherValues.length,
       healthy: watcherValues.filter(w => w.healthStatus === 'Healthy').length,
       unstable: watcherValues.filter(w => w.healthStatus === 'Unstable').length,
-      broken: watcherValues.filter(w => w.healthStatus === 'Broken').length,
+      broken: watcherValues.filter(w => w.healthStatus === 'Broken' || w.healthStatus === 'Watcher Down').length,
       sufficient: watcherValues.filter(w => (w.permitStatus?.status) === 'sufficient').length,
       critical: watcherValues.filter(w => (w.permitStatus?.status) === 'critical').length,
       exhausted: watcherValues.filter(w => (w.permitStatus?.status) === 'exhausted').length

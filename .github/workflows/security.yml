@@ -76,9 +76,14 @@ jobs:
       # Install and run Gitleaks
       - name: Install Gitleaks
         run: |
-          curl -sSfL https://github.com/zricethezav/gitleaks/releases/download/v8.17.0/gitleaks-linux-amd64 -o gitleaks
+          curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
+          | grep "browser_download_url.*linux_x64.tar.gz" \
+          | cut -d '"' -f 4 \
+          | wget -i - -O gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz
           chmod +x gitleaks
           mv gitleaks /usr/local/bin/gitleaks
+
       - name: Run Gitleaks secret scan
         run: gitleaks detect --source . || true
 
