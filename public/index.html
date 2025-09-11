@@ -204,7 +204,7 @@ function renderSummary(summary) {
         <div class="status-row-2col">
           <div class="status-col"><strong>Permits:</strong> ${avail}/${total}</div>
           <div class="status-col right"><strong>Status:</strong>
-            <span class="permit-${permitStatus.status}">${permitStatus.message || ''}</span>
+            <span class="permit-${permitStatus.status.replace(/\s+/g, '-').toLowerCase()}">${permitStatus.message || ''}</span>
           </div>
         </div>
         <div class="progress-bar">
@@ -228,6 +228,8 @@ function renderSummary(summary) {
                   ? 'health-orange'
                   : watcher.healthStatus === 'Broken'
                   ? 'health-red'
+                  : watcher.healthStatus === 'Watcher Down'
+                  ? 'health-down'
                   : ''
               }">${watcher.healthStatus || 'Unknown'}</span>
             </div>
