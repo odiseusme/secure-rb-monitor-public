@@ -295,6 +295,17 @@ async function runBatches(thunks, limit) {
       results[watcher.name] = watcherData;
     }
 
+// Ensure permitStatus is always an object
+Object.values(results).forEach(watcherData => {
+  if (
+    typeof watcherData.permitStatus !== 'object' ||
+    watcherData.permitStatus === null ||
+    typeof watcherData.permitStatus.status !== 'string'
+  ) {
+    watcherData.permitStatus = { status: 'unknown', message: 'Unknown' };
+  }
+});
+
     // Calculate summary stats
     const watcherValues = Object.values(results);
     const summary = {
