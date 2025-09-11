@@ -31,3 +31,10 @@
 - [ ] Load balancing for multiple monitor instances
 - [ ] Database persistence option
 - [ ] Configuration management improvements
+
+# TODO more
+
+- [ ] **Frontend Robustness:** Patch index.html to safeguard against non-object or missing permitStatus (see last Copilot suggestion for ready code)
+- [x] **Backend Normalization:** Always output permitStatus as an object in status.json (**DONE**)
+- [ ] **Debug Watcher Down UI:** Once above fixes are live, re-test UI and status for down/unknown watchers
+- [ ] **General Testing:** After next session, verify overall system health and dashboard accuracy
