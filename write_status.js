@@ -173,8 +173,8 @@ async function collectWatcherStatus(watcher) {
 
     // If info is missing or health status is missing, treat as down!
     if (!info || !info.health || !info.health.status) {
-      result.healthStatus = 'Watcher Down';
-      result.permitStatus = { status: 'Watcher Down', message: 'Watcher Down' };
+      result.healthStatus = 'Offline';
+      result.permitStatus = { status: 'Offline', message: 'Offline' };
     } else {
       result.healthStatus = info.health.status;
 
@@ -218,8 +218,8 @@ async function collectWatcherStatus(watcher) {
   } catch (err) {
     result.errors.push(err.message || String(err));
     result.containerStatus = 'unknown';
-    result.healthStatus = 'Watcher Down';
-    result.permitStatus = { status: 'Watcher Down', message: 'Watcher Down' };
+    result.healthStatus = 'Offline';
+    result.permitStatus = { status: 'Offline', message: 'Offline' };
     console.error(`    ${watcher.name}: ${err.message}`);
   }
 
@@ -312,7 +312,7 @@ Object.values(results).forEach(watcherData => {
       total: watcherValues.length,
       healthy: watcherValues.filter(w => w.healthStatus === 'Healthy').length,
       unstable: watcherValues.filter(w => w.healthStatus === 'Unstable').length,
-      broken: watcherValues.filter(w => w.healthStatus === 'Broken' || w.healthStatus === 'Watcher Down').length,
+      broken: watcherValues.filter(w => w.healthStatus === 'Broken' || w.healthStatus === 'Offline').length,
       sufficient: watcherValues.filter(w => (w.permitStatus?.status) === 'sufficient').length,
       critical: watcherValues.filter(w => (w.permitStatus?.status) === 'critical').length,
       exhausted: watcherValues.filter(w => (w.permitStatus?.status) === 'exhausted').length

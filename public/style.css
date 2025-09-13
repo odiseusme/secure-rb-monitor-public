@@ -229,7 +229,7 @@ body {
 .permit-sufficient { color: #10B981; font-weight: 600; }  /* Green for sufficient (2+) */
 .permit-critical { color: #F59E0B; font-weight: 600; }    /* Orange for critical (1) */
 .permit-exhausted { color: #EF4444; font-weight: 600; }   /* Red for exhausted (0) */
-.permit-Watcher\ Down { color: #ff1744; font-weight: bold; } /* Vivid Red for watcher down (-) */
+.permit-offline { color: #ff1744; font-weight: bold; }   /* Vivid Red for offline (-) */
 
 /* Permit Status Box - UPDATED with clear logic */
 .permit-status {
