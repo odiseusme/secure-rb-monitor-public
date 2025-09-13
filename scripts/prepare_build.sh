@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Interactive QR code and monitor start prompts - feature branch
 # ---------- Paths / Env ----------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -94,6 +95,7 @@ discover_watchers_and_generate_files() {
   service_names=$(docker ps --format '{{.Names}}' | awk '/-service-1$/')
   if [ -z "$service_names" ]; then
     log "No watchers found; not generating config.json or override."
+    echo 0
     return 0
   fi
 
@@ -147,6 +149,7 @@ discover_watchers_and_generate_files() {
     done
   } > "$override_file"
   log "Wrote networks to ${override_file}"
+  echo $(echo "$service_names" | wc -w)
 }
 
 # ---------- Main ----------
@@ -154,59 +157,145 @@ main() {
   set_docker_gid
   maybe_bind_all
 
-  # ALWAYS run discovery first, regardless of port configuration
-  discover_watchers_and_generate_files
+  # Run watcher discovery ONCE and get watcher count
+  WATCHERS_FOUND=$(discover_watchers_and_generate_files)
 
-  # Reuse HOST_PORT if present and not forcing
+  # Port selection and config
+  local port count host_ip display_host ip_lan current MONITOR_URL LAN_URL QR_URL
   if [ -f "$ENV_FILE" ] && grep -qE '^HOST_PORT=' "$ENV_FILE" && [ "$FORCE" -ne 1 ]; then
-    local current host_ip display_host ip_lan
     current="$(grep -E '^HOST_PORT=' "$ENV_FILE" | tail -1 | cut -d= -f2)"
     host_ip="$(grep -E '^HOST_IP='  "$ENV_FILE" | tail -1 | cut -d= -f2 || echo 127.0.0.1)"
     display_host="$host_ip"; [ "$display_host" = "0.0.0.0" ] && display_host="localhost"
-
-    echo "Monitor URL: http://${display_host}:${current}/"
     ip_lan="$(lan_ip_guess || echo 127.0.0.1)"
-    [ "$ip_lan" != "127.0.0.1" ] && echo "LAN URL:     http://${ip_lan}:${current}/"
-    print_qr "http://${ip_lan}:${current}/"
-    open_browser "http://${display_host}:${current}/"
-
-    return 0
+    MONITOR_URL="http://${display_host}:${current}/"
+    LAN_URL=""
+    if [ "$ip_lan" != "127.0.0.1" ]; then
+      LAN_URL="http://${ip_lan}:${current}/"
+    fi
+    echo "Monitor URL: $MONITOR_URL"
+    [ -n "$LAN_URL" ] && echo "LAN URL:     $LAN_URL"
+    print_qr "$MONITOR_URL"
+    open_browser "$MONITOR_URL"
+    QR_URL="$MONITOR_URL"
+    [ -n "$LAN_URL" ] && QR_URL="$LAN_URL"
+  else
+    port="$START_PORT"
+    count=0
+    if [ "$ALLOW_REUSE_EXISTING" = "1" ] && [ -f "$ENV_FILE" ] && grep -qE '^HOST_PORT=' "$ENV_FILE"; then
+      local existing
+      existing="$(grep -E '^HOST_PORT=' "$ENV_FILE" | tail -1 | cut -d= -f2)"
+      if [ -n "$existing" ] && ! port_in_use "$existing"; then
+        port="$existing"
+      fi
+    fi
+    while port_in_use "$port"; do
+      log "Port $port busy; next."
+      port=$((port+1)); count=$((count+1))
+      if [ "$count" -ge "$MAX_TRIES" ]; then
+        log "No free port found starting from ${START_PORT} (tried ${MAX_TRIES})."
+        exit 1
+      fi
+    done
+    update_env_kv "HOST_PORT" "$port"
+    host_ip="$(grep -E '^HOST_IP=' "$ENV_FILE" | tail -1 | cut -d= -f2 || echo 127.0.0.1)"
+    display_host="$host_ip"; [ "$display_host" = "0.0.0.0" ] && display_host="localhost"
+    ip_lan="$(lan_ip_guess || echo 127.0.0.1)"
+    MONITOR_URL="http://${display_host}:${port}/"
+    LAN_URL=""
+    if [ "$ip_lan" != "127.0.0.1" ]; then
+      LAN_URL="http://${ip_lan}:${port}/"
+    fi
+    echo "Monitor URL: $MONITOR_URL"
+    [ -n "$LAN_URL" ] && echo "LAN URL:     $LAN_URL"
+    print_qr "$MONITOR_URL"
+    open_browser "$MONITOR_URL"
+    QR_URL="$MONITOR_URL"
+    [ -n "$LAN_URL" ] && QR_URL="$LAN_URL"
   fi
 
-  # Pick a free port
-  local port count
-  port="$START_PORT"
-  count=0
+  # Interactive prompts if watchers are found
+  if [ "$WATCHERS_FOUND" -gt 0 ]; then
+    # --- QR code prompt ---
+    while true; do
+      read -r -p "Would you like to see a QR code for phone access to the monitor at $QR_URL? [y/N] " qr_reply
+      qr_reply="${qr_reply,,}"  # to lowercase
+      if [[ -z "$qr_reply" || "$qr_reply" == "n" || "$qr_reply" == "no" ]]; then
+        break
+      elif [[ "$qr_reply" == "y" || "$qr_reply" == "yes" ]]; then
+        if ! command -v qrencode >/dev/null 2>&1; then
+          while true; do
+            read -r -p "Showing QR code requires 'qrencode'. Would you like to install it now? [Y/n] " install_reply
+            install_reply="${install_reply,,}"
+            if [[ -z "$install_reply" || "$install_reply" == "n" || "$install_reply" == "no" ]]; then
+              echo "Skipping QR code."
+              break 2
+            elif [[ "$install_reply" == "y" || "$install_reply" == "yes" ]]; then
+              if command -v apt-get >/dev/null 2>&1; then
+                sudo apt-get update && sudo apt-get install -y qrencode
+              elif command -v brew >/dev/null 2>&1; then
+                brew install qrencode
+              else
+                echo "Cannot auto-install 'qrencode' (unknown package manager)."
+                break 2
+              fi
+              break
+            fi
+          done
+        fi
+        if command -v qrencode >/dev/null 2>&1; then
+          echo "Monitor (LAN) URL: $QR_URL"
+          echo " "
+          qrencode -t ansiutf8 -s 1 -l H "$QR_URL"
+          echo "  "
+          # --- Copy-to-clipboard prompt ---
+          if command -v xclip >/dev/null 2>&1; then
+            while true; do
+              read -r -p "Would you like to copy the monitor LAN URL to clipboard? [Y/n] " clip_reply
+              clip_reply="${clip_reply,,}"
+              if [[ -z "$clip_reply" || "$clip_reply" == "n" || "$clip_reply" == "no" ]]; then
+                break
+              elif [[ "$clip_reply" == "y" || "$clip_reply" == "yes" ]]; then
+                echo -n "$QR_URL" | xclip -selection clipboard
+                echo "Copied to clipboard!"
+                break
+              fi
+            done
+          elif command -v pbcopy >/dev/null 2>&1; then
+            while true; do
+              read -r -p "Would you like to copy the monitor LAN URL to clipboard? [Y/n] " clip_reply
+              clip_reply="${clip_reply,,}"
+              if [[ -z "$clip_reply" || "$clip_reply" == "n" || "$clip_reply" == "no" ]]; then
+                break
+              elif [[ "$clip_reply" == "y" || "$clip_reply" == "yes" ]]; then
+                echo -n "$QR_URL" | pbcopy
+                echo "Copied to clipboard!"
+                break
+              fi
+            done
+          fi
+        fi
+        break
+      fi
+    done
 
-  if [ "$ALLOW_REUSE_EXISTING" = "1" ] && [ -f "$ENV_FILE" ] && grep -qE '^HOST_PORT=' "$ENV_FILE"; then
-    local existing
-    existing="$(grep -E '^HOST_PORT=' "$ENV_FILE" | tail -1 | cut -d= -f2)"
-    if [ -n "$existing" ] && ! port_in_use "$existing"; then
-      port="$existing"
-    fi
+    # --- Monitor run prompt ---
+    while true; do
+      read -r -p "Would you like to start the monitor now (docker compose up -d --build)? [y/N] " runmon_reply
+      runmon_reply="${runmon_reply,,}"
+      if [[ -z "$runmon_reply" || "$runmon_reply" == "n" || "$runmon_reply" == "no" ]]; then
+        echo "Monitor not started. You can run it later with 'docker compose up -d --build'."
+        break
+      elif [[ "$runmon_reply" == "y" || "$runmon_reply" == "yes" ]]; then
+        if command -v docker-compose >/dev/null 2>&1; then
+          docker-compose up -d --build
+        else
+          docker compose up -d --build
+        fi
+        echo "Monitor started."
+        break
+      fi
+    done
   fi
-
-  while port_in_use "$port"; do
-    log "Port $port busy; next."
-    port=$((port+1)); count=$((count+1))
-    if [ "$count" -ge "$MAX_TRIES" ]; then
-      log "No free port found starting from ${START_PORT} (tried ${MAX_TRIES})."
-      exit 1
-    fi
-  done
-
-  update_env_kv "HOST_PORT" "$port"
-
-  # Display URLs
-  local host_ip display_host ip_lan
-  host_ip="$(grep -E '^HOST_IP=' "$ENV_FILE" | tail -1 | cut -d= -f2 || echo 127.0.0.1)"
-  display_host="$host_ip"; [ "$display_host" = "0.0.0.0" ] && display_host="localhost"
-
-  echo "Monitor URL: http://${display_host}:${port}/"
-  ip_lan="$(lan_ip_guess || echo 127.0.0.1)"
-  [ "$ip_lan" != "127.0.0.1" ] && echo "LAN URL:     http://${ip_lan}:${port}/"
-  print_qr "http://${ip_lan}:${port}/"
-  open_browser "http://${display_host}:${port}/"
 }
 
 main "$@"
