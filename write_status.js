@@ -153,7 +153,7 @@ function calculatePermitStatus(activeRaw, totalRaw, permitsPerEvent = 3000000) {
 async function collectWatcherStatus(watcher) {
   const result = {
     name: watcher.name,
-    port: extractPortFromName(watcher.name),
+    port: extractPortFromUrl(watcher.url),
     network: watcher.network || 'unknown',
     container: watcher.name,
     containerStatus: 'running', // Assume running if we can reach it
@@ -227,8 +227,8 @@ async function collectWatcherStatus(watcher) {
 }
 
 // Extract port from watcher name (e.g., "watcher_3030-service-1" -> 3030)
-function extractPortFromName(name) {
-  const match = name.match(/watcher_(\d+)/);
+function extractPortFromUrl(url) {
+  const match = url.match(/:(\d+)(?:\/|$)/);
   return match ? parseInt(match[1], 10) : 3000;
 }
 
