@@ -1,8 +1,6 @@
 #!/usr/bin/env node
-// Status data generator for remote Rosen Bridge monitoring
-// Creates status.json for access from any PC or mobile device
-// Optimized for static hosting and cloud deployment
-// API-ONLY VERSION - No Docker socket dependency
+// Status data generator for Rosen Bridge monitoring (Docker/internal version)
+// Reads config.json with new structure: uses ui_port for display, service_url for health/status.
 
 const fs = require('fs');
 const path = require('path');
@@ -23,7 +21,6 @@ try {
   }
 }
 
-// Configuration
 let CONFIG = {
   statusFile: path.join(__dirname, 'public', 'status.json'),
   ergoExplorerApi: 'https://api.ergoplatform.com',
@@ -31,7 +28,6 @@ let CONFIG = {
   watchers: []
 };
 
-// Mutex to prevent overlapping cycles
 let updateInProgress = false;
 
 // Load config file if exists
@@ -67,9 +63,9 @@ async function fetchJson(url, headers = {}, retries = 2) {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), CONFIG.timeout);
-      const res = await fetch(url, { 
-        headers, 
-        signal: controller.signal 
+      const res = await fetch(url, {
+        headers,
+        signal: controller.signal
       });
       clearTimeout(timer);
       if (!res.ok) throw new Error(`${url} → ${res.status} ${res.statusText}`);
@@ -87,14 +83,12 @@ async function getAllBalances(address, rsnTokenId, eRsnTokenId) {
   try {
     const apiUrl = `${CONFIG.ergoExplorerApi}/api/v1/addresses/${address}/balance/confirmed`;
     const balanceData = await fetchJson(apiUrl);
-    
-    // ERG balance: convert from nanoERG to ERG
+
     const ergBalance = (balanceData.nanoErgs || 0) / 1e9;
-    
+
     let rsnBalance = 0;
     let eRsnBalance = 0;
-    
-    // Process tokens if they exist
+
     if (balanceData.tokens && Array.isArray(balanceData.tokens)) {
       for (const token of balanceData.tokens) {
         if (token.tokenId === rsnTokenId && token.amount && token.decimals !== undefined) {
@@ -105,28 +99,28 @@ async function getAllBalances(address, rsnTokenId, eRsnTokenId) {
         }
       }
     }
-    
-    return { 
+
+    return {
       ergBalance: +ergBalance.toFixed(6),
       rsnBalance: +rsnBalance.toFixed(3),
       eRsnBalance: +eRsnBalance.toFixed(3)
     };
   } catch (err) {
     console.error(`  Failed to fetch balances for ${address}: ${err.message}`);
-    return { 
-      ergBalance: 0, 
-      rsnBalance: 0, 
-      eRsnBalance: 0 
+    return {
+      ergBalance: 0,
+      rsnBalance: 0,
+      eRsnBalance: 0
     };
   }
 }
 
-// Calculate permit status with rich data format (preserving original detailed format)
+// Calculate permit status with rich data format
 function calculatePermitStatus(activeRaw, totalRaw, permitsPerEvent = 3000000) {
   const ppe = Math.max(1, Number(permitsPerEvent));
   const activeBlocks = Math.floor(Number(activeRaw) / ppe);
   const totalBlocks = Math.floor(Number(totalRaw) / ppe);
-  
+
   let status = 'sufficient';
   if (activeBlocks <= 0) status = 'exhausted';
   else if (activeBlocks === 1) status = 'critical';
@@ -137,26 +131,28 @@ function calculatePermitStatus(activeRaw, totalRaw, permitsPerEvent = 3000000) {
     utilization: totalBlocks > 0 ? (totalBlocks - activeBlocks) / totalBlocks : 0,
     available: activeBlocks,
     total: totalBlocks,
-    blocks: { 
-      available: activeBlocks, 
-      total: totalBlocks 
+    blocks: {
+      available: activeBlocks,
+      total: totalBlocks
     },
-    raw: { 
-      available: Number(activeRaw), 
-      total: Number(totalRaw) 
+    raw: {
+      available: Number(activeRaw),
+      total: Number(totalRaw)
     },
     permitsPerEvent: ppe
   };
 }
 
-// Collect watcher status via API (no Docker)
+// Collect watcher status via API
 async function collectWatcherStatus(watcher) {
   const result = {
     name: watcher.name,
-    port: extractPortFromUrl(watcher.url),
+    ui_name: watcher.ui_name,
+    ui_port: watcher.ui_port,
+    service_name: watcher.service_name,
+    service_url: watcher.service_url,
     network: watcher.network || 'unknown',
-    container: watcher.name,
-    containerStatus: 'running', // Assume running if we can reach it
+    containerStatus: 'running',
     healthStatus: 'unknown',
     permitStatus: { status: 'unknown', message: 'No data' },
     currentBalance: null,
@@ -166,23 +162,21 @@ async function collectWatcherStatus(watcher) {
   };
 
   try {
-    // Get watcher info from API
+    // Get watcher info from service_url (not from UI port)
     const info = await withRetry(async () => {
-      return await fetchJson(watcher.url);
+      return await fetchJson(watcher.service_url);
     }, 1, 500);
 
-    // If info is missing or health status is missing, treat as down!
     if (!info || !info.health || !info.health.status) {
       result.healthStatus = 'Offline';
       result.permitStatus = { status: 'Offline', message: 'Offline' };
     } else {
       result.healthStatus = info.health.status;
 
-      // Permit processing with rich format
-      if (info.permitCount && 
-          info.permitCount.active !== undefined && 
-          info.permitCount.total !== undefined) {
-        
+      if (info.permitCount &&
+        info.permitCount.active !== undefined &&
+        info.permitCount.total !== undefined) {
+
         const activeRaw = info.permitCount.active;
         const totalRaw = info.permitCount.total;
         const permitsPerEvent = info.permitsPerEvent || 3000000;
@@ -191,7 +185,6 @@ async function collectWatcherStatus(watcher) {
       }
     }
 
-    // Network (override if provided by API)
     if (info && info.network) {
       result.network = info.network;
     }
@@ -202,7 +195,7 @@ async function collectWatcherStatus(watcher) {
       const balances = await withRetry(async () => {
         return await getAllBalances(info.address, info.rsnTokenId, info.eRsnTokenId);
       }, 1, 1000);
-      
+
       result.currentBalance = balances.ergBalance;
       result.rsnBalance = balances.rsnBalance;
       result.eRsnBalance = balances.eRsnBalance;
@@ -210,7 +203,6 @@ async function collectWatcherStatus(watcher) {
       result.currentBalance = +(info.currentBalance / 1e9).toFixed(6);
     }
 
-    // Trial errors
     if (info && Array.isArray(info.health?.trialErrors)) {
       result.errors.push(...info.health.trialErrors);
     }
@@ -224,12 +216,6 @@ async function collectWatcherStatus(watcher) {
   }
 
   return result;
-}
-
-// Extract port from watcher name (e.g., "watcher_3030-service-1" -> 3030)
-function extractPortFromUrl(url) {
-  const match = url.match(/:(\d+)(?:\/|$)/);
-  return match ? parseInt(match[1], 10) : 3000;
 }
 
 // Concurrency-controlled batch processing
@@ -256,37 +242,30 @@ async function runBatches(thunks, limit) {
 // Main execution
 (async () => {
   try {
-    // Mutex guard - prevent overlapping cycles
     if (updateInProgress) {
       console.log('[MUTEX] Update already in progress, skipping cycle');
       return;
     }
     updateInProgress = true;
 
-    // Get watchers from config
     const watchers = CONFIG.watchers || [];
     console.log(`[API] Discovered ${watchers.length} watchers from configuration`);
-
     if (!watchers.length) {
       console.warn('[WARN] No watchers found in configuration');
       return;
     }
 
-    // Process watchers with concurrency limit
     const CONCURRENCY = Number(process.env.COLLECT_CONCURRENCY || 4);
     console.log(`[COLLECT] Processing ${watchers.length} watchers with concurrency=${CONCURRENCY}...`);
 
-    // Build thunks for concurrent processing
     const watcherThunks = watchers.map(watcher => async () =>
       collectWatcherStatus(watcher)
     );
 
-    // Run with concurrency control
     const watcherResults = await runBatches(watcherThunks, CONCURRENCY);
 
     const results = {};
 
-    // Process results
     for (let i = 0; i < watcherResults.length; i++) {
       const watcher = watchers[i];
       const watcherData = watcherResults[i];
@@ -295,18 +274,17 @@ async function runBatches(thunks, limit) {
       results[watcher.name] = watcherData;
     }
 
-// Ensure permitStatus is always an object
-Object.values(results).forEach(watcherData => {
-  if (
-    typeof watcherData.permitStatus !== 'object' ||
-    watcherData.permitStatus === null ||
-    typeof watcherData.permitStatus.status !== 'string'
-  ) {
-    watcherData.permitStatus = { status: 'unknown', message: 'Unknown' };
-  }
-});
+    // Ensure permitStatus is always an object
+    Object.values(results).forEach(watcherData => {
+      if (
+        typeof watcherData.permitStatus !== 'object' ||
+        watcherData.permitStatus === null ||
+        typeof watcherData.permitStatus.status !== 'string'
+      ) {
+        watcherData.permitStatus = { status: 'unknown', message: 'Unknown' };
+      }
+    });
 
-    // Calculate summary stats
     const watcherValues = Object.values(results);
     const summary = {
       total: watcherValues.length,
@@ -318,14 +296,12 @@ Object.values(results).forEach(watcherData => {
       exhausted: watcherValues.filter(w => (w.permitStatus?.status) === 'exhausted').length
     };
 
-    // Create final payload
     const payload = {
       summary,
       watchers: results,
       lastUpdate: new Date().toISOString()
     };
 
-    // Atomic write
     const tmpFile = CONFIG.statusFile + ".tmp";
     fs.writeFileSync(tmpFile, JSON.stringify(payload, null, 2));
     fs.renameSync(tmpFile, CONFIG.statusFile);
@@ -334,7 +310,6 @@ Object.values(results).forEach(watcherData => {
   } catch (err) {
     console.error('[FATAL] Update cycle failed:', err.message);
   } finally {
-    // Always release mutex
     updateInProgress = false;
   }
 })();

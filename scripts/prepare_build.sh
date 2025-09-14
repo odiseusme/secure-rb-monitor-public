@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Interactive QR code and monitor start prompts - feature branch
 # ---------- Paths / Env ----------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -12,7 +11,7 @@ START_PORT="${START_PORT:-8080}"
 MAX_TRIES="${MAX_TRIES:-25}"
 ALLOW_REUSE_EXISTING="${ALLOW_REUSE_EXISTING:-1}"   # reuse HOST_PORT in .env if still free
 FORCE="${FORCE:-0}"                                 # ignore existing HOST_PORT and pick new
-BIND_ALL="${BIND_ALL:-0}"                           # 1 = bind to 0.0.0.0 instead of 127.0.0.1
+BIND_ALL="${BIND_ALL:-1}"                           # 1 = bind to 0.0.0.0 instead of 127.0.0.1
 SHOW_QR="${SHOW_QR:-0}"                             # 1 = print a QR code (needs qrencode)
 OPEN_BROWSER="${OPEN_BROWSER:-0}"                   # 1 = open the URL
 
@@ -87,41 +86,68 @@ maybe_bind_all() {
   fi
 }
 
+get_host_port_for_watcher() {
+  local cname="$1"
+  docker ps --format '{{.Names}} {{.Ports}}' \
+    | awk -v name="$cname" '$1 == name && $2 ~ /->/ {split($2, arr, ":"); split(arr[2], arr2, "->"); print arr[2]}' \
+    | awk -F'->' '{print $1}' \
+    | awk -F':' '{print $1}'
+}
+
 # ---------- Watcher discovery + files ----------
 discover_watchers_and_generate_files() {
-  log "Discovering watcher service containers…"
-  # Generalized match: any running container with 'watcher' in its name and ending in -service-1
-  local service_names
-  service_names=$(docker ps --format '{{.Names}}' | awk '/-service-1$/')
-  if [ -z "$service_names" ]; then
-    log "No watchers found; not generating config.json or override."
+  log "Discovering watcher UI containers…"
+  # Get all running containers ending in -ui-1
+  local ui_containers
+  ui_containers=$(docker ps --format '{{.Names}}' | awk '/-ui-1$/')
+
+  if [ -z "$ui_containers" ]; then
+    log "No watcher UIs found; not generating config.json."
     echo 0
     return 0
   fi
 
-  # 1) config.json
   local config_file="${PROJECT_ROOT}/config.json"
   log "Generating ${config_file}…"
   {
-    echo '{'
-    echo '  "watchers": ['
+    echo '['
     local first=1
-    for name in $service_names; do
-      if [ $first -eq 0 ]; then echo ','; fi
-      first=0
-      printf '    {"name":"%s","url":"http://%s:3000/info","network":"ergo"}' "$name" "$name"
-    done
-    echo
-    echo '  ]'
-    echo '}'
-  } > "$config_file"
-  log "Wrote $(echo "$service_names" | wc -w) watcher(s) to ${config_file}"
+    for ui_name in $ui_containers; do
+      local line ui_port
+      line=$(docker ps --format '{{.Names}} {{.Ports}}' | grep "^$ui_name ")
+      local regex='([0-9\.]+):([0-9]+)->'
+      if [[ $line =~ $regex ]]; then
+        ui_port="${BASH_REMATCH[2]}"
+      else
+        ui_port="80"
+      fi
 
-  # 2) docker-compose.override.yml — attach the monitor to all watcher networks
+      local base_name="${ui_name%-ui-1}"
+      local service_name="${base_name}-service-1"
+      local service_port="3000"
+      local service_url="http://${service_name}:${service_port}/info"
+
+      if [ $first -eq 0 ]; then
+        echo '    },'
+      fi
+      first=0
+      echo '    {'
+      echo "      \"name\": \"${base_name}\","
+      echo "      \"ui_name\": \"${ui_name}\","
+      echo "      \"ui_port\": ${ui_port},"
+      echo "      \"service_name\": \"${service_name}\","
+      echo "      \"service_url\": \"${service_url}\","
+      echo "      \"network\": \"ergo\""
+    done
+    echo '    }'
+    echo ']'
+  } | awk 'BEGIN {print "{\n  \"watchers\": "} {print} END {print "}\n"}' > "$config_file"
+
+  # 2) docker-compose.override.yml — as before
   log "Determining watcher networks…"
   declare -A networks=()
   local net
-  for name in $service_names; do
+  for name in $ui_containers; do
     while read -r net; do
       [ -z "$net" ] && continue
       case "$net" in
@@ -149,8 +175,9 @@ discover_watchers_and_generate_files() {
     done
   } > "$override_file"
   log "Wrote networks to ${override_file}"
-  echo $(echo "$service_names" | wc -w)
+  echo $(echo "$ui_containers" | wc -w)
 }
+
 
 # ---------- Main ----------
 main() {
