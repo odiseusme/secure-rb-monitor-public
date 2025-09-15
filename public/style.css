@@ -330,3 +330,10 @@ body {
 .summary-card.healthy  h3 .count-num { color: #10B981; }  /* green */
 .summary-card.unstable h3 .count-num { color: #F59E0B; }  /* orange */
 .summary-card.broken   h3 .count-num { color: #EF4444; }  /* red */
+
+.bold-white {
+  color: #fff;
+  font-weight: bold;
+  background: none;
+  text-shadow: 0 1px 2px #444;
+}
