@@ -269,6 +269,21 @@ function renderSummary(summary) {
         // Normalize watchers and compute summary client-side
         const watchersArray = Object.values(data.watchers || {}).map(normalizeWatcher);
 
+        if (!watchersArray.length) {
+          document.getElementById('summary').innerHTML = '';
+          document.getElementById('watchers').innerHTML = `
+            <div class="waiting-message">
+              <h3>No watchers configured.</h3>
+              <p>
+                When your watchers are up, they will appear here automatically.<br />
+                Please start a watcher and refresh this page.
+              </p>
+            </div>
+          `;
+          document.getElementById('lastUpdatedTop').textContent = "Last updated: --";
+          return;
+        }
+
         const health = computeHealthSummary(watchersArray);
         const permit = computePermitSummary(watchersArray);
         const summary = {
