@@ -316,7 +316,21 @@ volumes:
 ### 6. Error Handling
 - Gracefully handles unreachable watchers
 - Continues monitoring available services
-- Clear error reporting in status output
+
+### 7. Running as Non-Root User
+
+The monitor container runs as a non-root user (UID 1000).  
+This improves security by preventing escalated permissions inside the container.
+
+**Implications:**
+- Any mounted volumes (e.g., for persistent data) should be writable by UID 1000.
+- Files created by the container will be owned by UID 1000 on the host.
+- If you encounter permission errors, check host directory ownership with:
+  ```sh
+  sudo chown -R 1000:1000 <your-folder>
+  ```
+No changes to application usage are required.- Clear error reporting in status output
+
 
 ### Troubleshooting
 - **Watchers not discovered**: Check container naming (must end with '-service-1')

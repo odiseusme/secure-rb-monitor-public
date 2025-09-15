@@ -42,8 +42,9 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD curl -fsS http://localhost:8080/health || exit 1
 
-USER root
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
+RUN chown -R node:node /app
+USER node
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["node", "static-server.js"]
