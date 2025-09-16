@@ -77,6 +77,13 @@ export class UpdateData extends OpenAPIRoute {
         const hoursSinceReset = (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60);
         
         if (hoursSinceReset < 1 && rateLimit.writes >= 5) { // 5 writes per hour limit
+          // Track rate limit violation before returning error
+          const userDataRaw = await c.env.USERS_KV.get(`user:${publicId}`);
+          if (userDataRaw) {
+            const userData = JSON.parse(userDataRaw);
+            userData.rateLimitViolations = (userData.rateLimitViolations || 0) + 1;
+            await c.env.USERS_KV.put(`user:${publicId}`, JSON.stringify(userData));
+          }
           return c.json({ error: "Rate limit exceeded" }, 429);
         }
         
@@ -97,6 +104,11 @@ export class UpdateData extends OpenAPIRoute {
       }
 
       const userData = JSON.parse(userDataRaw);
+
+      // Track user activity for spam detection
+      userData.totalRequests = (userData.totalRequests || 0) + 1;
+      userData.lastActivity = new Date().toISOString();
+
       const requestBody = await c.req.json();
 
       // Validate payload structure
