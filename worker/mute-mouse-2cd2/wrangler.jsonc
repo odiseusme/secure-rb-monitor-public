@@ -1,17 +1,12 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "private-rb-monitor",
+  "name": "private-rb-monitor",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-09-13",
 	"observability": {
 		"enabled": true
 	},
 	"kv_namespaces": [
-		{
-			"binding": "USERS_KV",
-			"preview_id": "your-preview-kv-id",
-			"id": "your-production-kv-id"
-		},
 		{
 			"binding": "USERS_KV",
 			"id": "a36a8f56fc644f60a58a2fa8b9270ffe"

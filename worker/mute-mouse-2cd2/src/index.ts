@@ -1,9 +1,9 @@
 import { fromHono } from "chanfana";
 import { Hono } from "hono";
-import { TaskCreate } from "./endpoints/taskCreate";
-import { TaskDelete } from "./endpoints/taskDelete";
-import { TaskFetch } from "./endpoints/taskFetch";
-import { TaskList } from "./endpoints/taskList";
+import { CreateUser } from "./endpoints/createUser";
+// import { UpdateData } from "./endpoints/updateData";
+// import { GetBlob } from "./endpoints/getBlob";
+// import { DeleteUser } from "./endpoints/deleteUser";
 
 // Start a Hono app
 const app = new Hono<{ Bindings: Env }>();
@@ -13,14 +13,14 @@ const openapi = fromHono(app, {
 	docs_url: "/",
 });
 
-// Register OpenAPI endpoints
-openapi.get("/api/tasks", TaskList);
-openapi.post("/api/tasks", TaskCreate);
-openapi.get("/api/tasks/:taskSlug", TaskFetch);
-openapi.delete("/api/tasks/:taskSlug", TaskDelete);
+// Register OpenAPI endpoints for secure monitoring
+openapi.post("/api/create-user", CreateUser);
+// openapi.post("/api/update", UpdateData);
+// openapi.get("/api/blob/:publicId", GetBlob);
+// openapi.delete("/api/user/:publicId", DeleteUser);
 
-// You may also register routes for non OpenAPI directly on Hono
-// app.get('/test', (c) => c.text('Hono!'))
+// Health check endpoint
+app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
 // Export the Hono app
 export default app;
