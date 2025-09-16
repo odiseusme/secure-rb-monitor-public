@@ -1,8 +1,8 @@
 import { fromHono } from "chanfana";
 import { Hono } from "hono";
 import { CreateUser } from "./endpoints/createUser";
-// import { UpdateData } from "./endpoints/updateData";
-// import { GetBlob } from "./endpoints/getBlob";
+import { UpdateData } from "./endpoints/updateData";
+import { GetBlob } from "./endpoints/getBlob";
 // import { DeleteUser } from "./endpoints/deleteUser";
 
 // Start a Hono app
@@ -15,8 +15,8 @@ const openapi = fromHono(app, {
 
 // Register OpenAPI endpoints for secure monitoring
 openapi.post("/api/create-user", CreateUser);
-// openapi.post("/api/update", UpdateData);
-// openapi.get("/api/blob/:publicId", GetBlob);
+openapi.post("/api/update", UpdateData);
+openapi.get("/api/blob/:publicId", GetBlob);
 // openapi.delete("/api/user/:publicId", DeleteUser);
 
 // Health check endpoint
