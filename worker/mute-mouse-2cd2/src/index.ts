@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { CreateUser } from "./endpoints/createUser";
 import { UpdateData } from "./endpoints/updateData";
 import { GetBlob } from "./endpoints/getBlob";
-// import { DeleteUser } from "./endpoints/deleteUser";
+import { DeleteUser } from "./endpoints/deleteUser";
 
 // Start a Hono app
 const app = new Hono<{ Bindings: Env }>();
@@ -17,7 +17,7 @@ const openapi = fromHono(app, {
 openapi.post("/api/create-user", CreateUser);
 openapi.post("/api/update", UpdateData);
 openapi.get("/api/blob/:publicId", GetBlob);
-// openapi.delete("/api/user/:publicId", DeleteUser);
+openapi.delete("/api/user/:publicId", DeleteUser);
 
 // Health check endpoint
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
