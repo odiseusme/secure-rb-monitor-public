@@ -55,12 +55,11 @@ export class CreateUser extends OpenAPIRoute {
       const writeToken = this.generateId(64);
       const salt = this.generateId(32);
 
-      // KDF parameters for Argon2id
+      // KDF parameters for PBKDF2-SHA256
       const kdfParams = {
-        algorithm: "argon2id",
-        iterations: 3,
-        memory: 65536, // 64MB in KB
-        parallelism: 1,
+        algorithm: "PBKDF2",
+        hash: "SHA256",
+        iterations: 100000, // or match your dashboard default
       };
 
       // Store user metadata in KV
