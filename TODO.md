@@ -10,6 +10,7 @@
 - [ ] Dark mode toggle
 
 ## Monitoring & Alerts
+- [ ] change registration to cloudflare service to self-serve
 - [ ] Email/webhook alerts for watcher failures
 - [ ] Historical status tracking and charts
 - [ ] Performance metrics (response times, uptime %)
@@ -24,6 +25,7 @@
 - [ ] Configuration validation
 - [ ] Automated testing suite
 - [ ] CI/CD pipeline improvements
+- [ ] load-balancing of cloudflare calls
 
 ## Operations
 - [ ] Backup/restore procedures

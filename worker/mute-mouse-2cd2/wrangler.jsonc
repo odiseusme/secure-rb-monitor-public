@@ -1,18 +1,38 @@
 {
-	"$schema": "node_modules/wrangler/config-schema.json",
+  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "private-rb-monitor",
-	"main": "src/index.ts",
-	"compatibility_date": "2025-09-13",
-	"observability": {
-		"enabled": true
-	},
-	"kv_namespaces": [
-		{
-			"binding": "USERS_KV",
-			"id": "a36a8f56fc644f60a58a2fa8b9270ffe"
-		}
-	],
-	"vars": {
-		"ENVIRONMENT": "development"
-	}
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-13",
+
+  // Local/dev KV binding — wrangler dev will auto-provision an in-memory namespace
+  // If you already have a specific dev KV id, you can put it here.
+  "kv_namespaces": [
+    { "binding": "USERS_KV", "id": "dev-users-kv" }
+  ],
+
+  // Don’t upload editor temp files; prevents reload-churn
+  "upload": {
+    "exclude": [
+      "**/*.swp",
+      "**/.*.swp",
+      "**/*.tmp",
+      "**/*~",
+      "**/.DS_Store"
+    ]
+  },
+
+  // Production environment — no secrets in this file
+  "environments": {
+    "production": {
+      // Non-secret marker only
+      "vars": {
+        "ENVIRONMENT": "production"
+      },
+      // Replace the placeholder below with your real KV namespace ID
+      // after you create it (we’ll do that in the next steps).
+      "kv_namespaces": [
+        { "binding": "USERS_KV", "id": "USERS_KV_PROD_NAMESPACE_ID" }
+      ]
+    }
+  }
 }

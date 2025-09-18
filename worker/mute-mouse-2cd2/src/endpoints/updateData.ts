@@ -5,7 +5,7 @@ import { z } from "zod";
 export class UpdateData extends OpenAPIRoute {
   schema = {
     tags: ["Data Management"],
-    summary: "Update encrypted data blob",
+    summary: "Update encrypted data blob (AES-GCM; tag embedded in ciphertext)",
     request: {
       headers: z.object({
         "authorization": z.string().describe("Bearer token for authentication"),
@@ -15,11 +15,13 @@ export class UpdateData extends OpenAPIRoute {
         content: {
           "application/json": {
             schema: z.object({
-              nonce: z.string().describe("Encryption nonce"),
-              ciphertext: z.string().describe("Encrypted data blob"),
-              tag: z.string().describe("Authentication tag"),
+              // NOTE: AES-GCM format used by the client:
+              // - nonce: base64 (12 bytes)
+              // - ciphertext: base64 (ciphertext || authTag)
+              nonce: z.string().describe("GCM nonce (base64, 12 bytes)"),
+              ciphertext: z.string().describe("GCM ciphertext with auth tag appended (base64)"),
               version: z.number().describe("Data version for concurrency control"),
-              issuedAt: z.string().describe("Timestamp when data was created"),
+              issuedAt: z.string().describe("ISO timestamp when data was created"),
               prevHash: z.string().optional().describe("Hash of previous version"),
               schemaVersion: z.number().default(1).describe("Data schema version"),
             }),
@@ -39,106 +41,96 @@ export class UpdateData extends OpenAPIRoute {
           },
         },
       },
-      "401": {
-        description: "Unauthorized - Invalid write token",
-      },
-      "409": {
-        description: "Conflict - Stale revision",
-      },
-      "429": {
-        description: "Too many requests",
-      },
+      "401": { description: "Unauthorized - Invalid write token" },
+      "409": { description: "Conflict - Stale revision" },
+      "429": { description: "Too many requests" },
     },
   };
 
   async handle(c: Context) {
     try {
-      // Extract and validate write token
+      // --- Auth: Bearer write token -> map to publicId
       const authHeader = c.req.header("authorization");
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
         return c.json({ error: "Missing or invalid authorization header" }, 401);
       }
-
-      const writeToken = authHeader.substring(7); // Remove "Bearer "
+      const writeToken = authHeader.substring(7);
       const publicId = await c.env.USERS_KV.get(`token:${writeToken}`);
-      
       if (!publicId) {
         return c.json({ error: "Invalid write token" }, 401);
       }
 
-      // Rate limiting check
+      // --- Rate limit writes (simple local KV-based)
       const rateLimitKey = `rate:${publicId}`;
       const rateLimitData = await c.env.USERS_KV.get(rateLimitKey);
-      
       if (rateLimitData) {
-        const rateLimit = JSON.parse(rateLimitData);
+        const rate = JSON.parse(rateLimitData);
         const now = new Date();
-        const lastReset = new Date(rateLimit.lastReset);
-        const hoursSinceReset = (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60);
-        
-        if (hoursSinceReset < 1 && rateLimit.writes >= 5) { // 5 writes per hour limit
-          // Track rate limit violation before returning error
+        const lastReset = new Date(rate.lastReset);
+        const hours = (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60);
+
+        if (hours < 1 && rate.writes >= 5) {
+          // bump violation count on user record
           const userDataRaw = await c.env.USERS_KV.get(`user:${publicId}`);
           if (userDataRaw) {
-            const userData = JSON.parse(userDataRaw);
-            userData.rateLimitViolations = (userData.rateLimitViolations || 0) + 1;
-            await c.env.USERS_KV.put(`user:${publicId}`, JSON.stringify(userData));
+            const user = JSON.parse(userDataRaw);
+            user.rateLimitViolations = (user.rateLimitViolations || 0) + 1;
+            await c.env.USERS_KV.put(`user:${publicId}`, JSON.stringify(user));
           }
           return c.json({ error: "Rate limit exceeded" }, 429);
         }
-        
-        // Reset counters if more than an hour has passed
-        if (hoursSinceReset >= 1) {
-          rateLimit.writes = 0;
-          rateLimit.lastReset = now.toISOString();
+        if (hours >= 1) {
+          rate.writes = 0;
+          rate.lastReset = now.toISOString();
         }
-        
-        rateLimit.writes++;
-        await c.env.USERS_KV.put(rateLimitKey, JSON.stringify(rateLimit), { expirationTtl: 3600 });
+        rate.writes++;
+        await c.env.USERS_KV.put(rateLimitKey, JSON.stringify(rate), { expirationTtl: 3600 });
       }
 
-      // Get current user metadata
+      // --- Load user metadata
       const userDataRaw = await c.env.USERS_KV.get(`user:${publicId}`);
       if (!userDataRaw) {
         return c.json({ error: "User not found" }, 401);
       }
-
       const userData = JSON.parse(userDataRaw);
 
-      // Track user activity for spam detection
-      userData.totalRequests = (userData.totalRequests || 0) + 1;
-      userData.lastActivity = new Date().toISOString();
+      // --- Parse request body (NO separate 'tag' expected anymore)
+      const body = await c.req.json();
+      const {
+        nonce,
+        ciphertext,
+        version,
+        issuedAt,
+        prevHash,
+        schemaVersion = 1,
+      } = body || {};
 
-      const requestBody = await c.req.json();
-
-      // Validate payload structure
-      const { nonce, ciphertext, tag, version, issuedAt, prevHash, schemaVersion = 1 } = requestBody;
-
-      if (!nonce || !ciphertext || !tag || typeof version !== 'number' || !issuedAt) {
+      if (!nonce || !ciphertext || typeof version !== "number" || !issuedAt) {
         return c.json({ error: "Invalid payload structure" }, 400);
       }
 
-      // Check for replay attacks and version conflicts
-      if (version <= userData.revision) {
+      // --- Check revision monotonicity
+      if (version <= (userData.revision || 0)) {
         return c.json({ error: "Stale revision" }, 409);
       }
 
-      // Calculate blob size (approximate)
-      const blobSize = JSON.stringify(requestBody).length;
-      if (blobSize > 25 * 1024 * 1024) { // 25MB limit
+      // --- Limit payload size (25MB)
+      const approxSize = JSON.stringify(body).length;
+      if (approxSize > 25 * 1024 * 1024) {
         return c.json({ error: "Payload too large" }, 413);
       }
 
-      // Update user metadata
+      // --- Update user metadata/activity
       userData.revision = version;
       userData.lastUpdate = new Date().toISOString();
-      
-      // Store encrypted blob
+      userData.totalRequests = (userData.totalRequests || 0) + 1;
+      userData.lastActivity = new Date().toISOString();
+
+      // --- Store encrypted blob (AES-GCM: ciphertext already includes auth tag)
       const blobKey = `blob:${publicId}`;
-      const blobData = {
+      const blob = {
         nonce,
         ciphertext,
-        tag,
         rev: version,
         schemaVersion,
         issuedAt,
@@ -146,17 +138,12 @@ export class UpdateData extends OpenAPIRoute {
         updatedAt: new Date().toISOString(),
       };
 
-      // Atomic updates
       await Promise.all([
         c.env.USERS_KV.put(`user:${publicId}`, JSON.stringify(userData)),
-        c.env.USERS_KV.put(blobKey, JSON.stringify(blobData)),
+        c.env.USERS_KV.put(blobKey, JSON.stringify(blob)),
       ]);
 
-      return c.json({
-        success: true,
-        revision: version,
-      });
-
+      return c.json({ success: true, revision: version });
     } catch (error) {
       console.error("Error updating data:", error);
       return c.json({ error: "Internal server error" }, 500);

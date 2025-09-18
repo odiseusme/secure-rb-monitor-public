@@ -25,3 +25,6 @@ config.json
 docker-compose.override.yml
 museum/poll-all-services.sh
 museum/nano poll-all-services.sh
+.cloudflare-config.json
+.cloudflare-config.json
+museum/
