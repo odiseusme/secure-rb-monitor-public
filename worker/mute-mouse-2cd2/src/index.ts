@@ -11,6 +11,15 @@ import { RegisterUser } from "./endpoints/registerUser";
 import { AdminStats } from "./endpoints/adminStats";
 import ServeDashboard from "./endpoints/serveDashboard";
 
+import {
+  DASHBOARD_HTML,
+  STYLE_CSS,
+  FAVICON_ICO_BASE64,
+  OWL_ICON_32_BASE64,
+  OWL_ICON_180_BASE64,
+  MANIFEST_JSON
+} from "./assets";
+
 // Create a plain Hono app (no OpenAPI/chanfana)
 const app = new Hono<{ Bindings: Env }>();
 
@@ -63,33 +72,47 @@ app.get("/api/admin/stats", async (c) => {
   return endpoint.handle(c);
 });
 
-// Serve the dashboard HTML
 // Serve the dashboard HTML (ServeDashboard is a function, not a class)
 app.get("/d/:publicId", ServeDashboard);
 
-// TEMPORARY: Fix user KDF params for dashboard decryption
-app.post("/debug/fix-kdf/:publicId", async (c) => {
-  const { publicId } = c.req.param();
-  if (!publicId) return c.json({ error: "Missing publicId" }, 400);
-  const userRaw = await c.env.USERS_KV.get(`user:${publicId}`);
-  if (!userRaw) return c.json({ error: "User not found" }, 404);
-  const user = JSON.parse(userRaw);
-  user.kdfParams = {
-    algorithm: "pbkdf2",
-    iterations: 100000
-  };
-  await c.env.USERS_KV.put(`user:${publicId}`, JSON.stringify(user));
-  return c.json({ success: true, user });
+// ===== Static Asset Routes =====
+
+// Serve CSS
+app.get("/style.css", (c) =>
+  c.text(STYLE_CSS, 200, { "Content-Type": "text/css; charset=utf-8" })
+);
+
+// Serve favicon.ico
+app.get("/favicon.ico", (c) => {
+  const binaryString = atob(FAVICON_ICO_BASE64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return c.body(bytes, 200, {
+    "Content-Type": "image/x-icon",
+    "Cache-Control": "public, max-age=86400"
+  });
 });
 
-// TEMPORARY: Debug endpoint to read any KV key (for dev only!)
-app.get("/debug/kv/:key", async (c) => {
-  const { key } = c.req.param();
-  if (!key) return c.json({ error: "Missing key" }, 400);
-  const value = await c.env.USERS_KV.get(key);
-  if (!value) return c.json({ error: "Not found" }, 404);
-  return c.json({ key, value });
-});
+// Serve 180px PNG icon
+app.get("/icons/owlHeadA_180.png", (c) =>
+  c.body(Uint8Array.from(atob(OWL_ICON_180_BASE64), c => c.charCodeAt(0)), 200, {
+    "Content-Type": "image/png"
+  })
+);
+
+// Serve 32px PNG icon
+app.get("/icons/owlHeadA_32.png", (c) =>
+  c.body(Uint8Array.from(atob(OWL_ICON_32_BASE64), c => c.charCodeAt(0)), 200, {
+    "Content-Type": "image/png"
+  })
+);
+
+// Serve web manifest
+app.get("/site.webmanifest", (c) =>
+  c.text(MANIFEST_JSON, 200, { "Content-Type": "application/manifest+json; charset=utf-8" })
+);
 
 // Export the app as the Worker
 export default app;
