@@ -13,7 +13,7 @@ const { encryptGCM, encryptCBC, b64encode } = require('./cryptoHelpers');
 
 // KDF/passphrase inputs (env-configurable)
 const PASS_PHRASE = process.env.DASH_PASSPHRASE || 'TestPassphrase123!';           // TODO: set real passphrase via env
-const SALT_B64    = process.env.DASH_SALT_B64   || '1p7udJGXwrfk5IDzQUqSNw==';     // TODO: set real per-user salt via env
+const SALT_B64    = process.env.DASH_SALT_B64   || '1p7udJGXwrfk5IDzQUqSNw==';     // Will be overridden by config.salt
 const KDF_ITERS   = Number(process.env.DASH_KDF_ITERS || 100000);
 
 // Worker endpoint & auth (env-configurable)
@@ -75,17 +75,20 @@ class CloudflareSync {
     }
   }
 
-  saveLastHash(hash) {
+  saveLastHash(hash, version = null) {
     const data = {
       hash,
-      version: this.version,
+      version: version || this.version,
       timestamp: new Date().toISOString()
     };
     fs.writeFileSync(LAST_HASH_FILE, JSON.stringify(data, null, 2));
   }
 
   calculateHash(data) {
-    return crypto.createHash('sha256').update(normalizeJsonString(data)).digest('hex');
+    // Create a copy without the lastUpdate field to avoid false changes
+    const dataForHash = { ...data };
+    delete dataForHash.lastUpdate;
+    return crypto.createHash('sha256').update(normalizeJsonString(dataForHash)).digest('hex');
   }
 
   async uploadToCloudflare() {
@@ -95,10 +98,22 @@ class CloudflareSync {
     // NEW: build encrypted payload (GCM) from the current status.json
     const raw = fs.readFileSync(STATUS_FILE, 'utf8');
     const data = JSON.parse(raw);
+    
+    // Data is being encrypted successfully
 
+    // Increment version BEFORE upload attempt
+    // Start with a high version number to avoid conflicts with existing Worker data
+    const nextVersion = Math.max((this.version ?? 1) + 1, 4000);
     const { payload, thisHash } = await buildEncryptedPayloadGCM(
       data,
-      { version: (this.version ?? 1), prevHash: this.lastHash }
+      { 
+        version: nextVersion, 
+        prevHash: this.lastHash,
+        passphrase: PASS_PHRASE,
+        saltB64: this.config.salt,
+        writeToken: this.config.writeToken,
+        iterations: KDF_ITERS
+      }
     );
 
     // POST the encrypted payload to the Worker
@@ -119,9 +134,9 @@ class CloudflareSync {
     }
 
     // Success: store hash & bump version
-    this.saveLastHash(thisHash);
-    this.version = (this.version ?? 1) + 1;
-    console.log('Upload OK, version:', this.version - 1, 'bytes:', payload.ciphertext.length);
+    this.saveLastHash(thisHash, nextVersion);
+    this.version = nextVersion;
+    console.log('Upload OK, version:', nextVersion, 'bytes:', payload.ciphertext.length);
     return true;
   }
 
@@ -207,7 +222,12 @@ function normalizeJsonString(objOrString) {
   if (typeof objOrString === 'string') return objOrString;
   if (!objOrString || typeof objOrString !== 'object') return JSON.stringify(objOrString);
   // stable: sort top-level keys (good enough for change detection)
-  return JSON.stringify(objOrString, Object.keys(objOrString).sort());
+  const sortedKeys = Object.keys(objOrString).sort();
+  const sortedObj = {};
+  for (const key of sortedKeys) {
+    sortedObj[key] = objOrString[key];
+  }
+  return JSON.stringify(sortedObj);
 }
 
 function sha256b64(s) {
@@ -223,15 +243,15 @@ async function buildEncryptedPayloadGCM(data, opts = {}) {
 
   // 1) prepare plaintext (stable JSON text for consistent hashing)
   const jsonText = normalizeJsonString(data);
+  
+  // Data is being processed correctly
 
   // 2) encrypt using PBKDF2-SHA256 -> AES-GCM (helpers handle WebCrypto)
   const enc = await encryptGCM({
-    passphrase: PASS_PHRASE,   // from env (DASH_PASSPHRASE)
-    saltB64:   SALT_B64,       // from env (DASH_SALT_B64)
+    passphrase: opts.passphrase || PASS_PHRASE,   // use passed passphrase or fallback
+    saltB64:   opts.saltB64 || SALT_B64,          // use passed salt or fallback
     plaintext: jsonText,
-    iterations: KDF_ITERS
-    // Optional AAD example (tie to account/schema):
-    // aadB64: b64encode(new TextEncoder().encode(`${process.env.PUBLIC_ID || ''}|${schemaVersion}`))
+    iterations: opts.iterations || KDF_ITERS      // use passed iterations or fallback
   });
 
   // 3) envelope to send to Worker

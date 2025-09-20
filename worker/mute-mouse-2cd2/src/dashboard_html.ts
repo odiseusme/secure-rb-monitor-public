@@ -138,31 +138,50 @@ export const DASHBOARD_HTML = `
       return JSON.parse(dec.decode(plaintext));
     }
 
-    // Step 2: Render dashboard after decryption
-    function showData(data) {
-      // Use the new summary/dashboard layout
-      const watchersArray = Object.values(data.watchers || {}).map(normalizeWatcher);
-      const health = computeHealthSummary(watchersArray);
-      const permit = computePermitSummary(watchersArray);
-      const summary = {
-        total: watchersArray.length,
-        healthy: health.healthy,
-        unstable: health.unstable,
-        broken: health.broken,
-        sufficient: permit.sufficient,
-        critical: permit.critical,
-        exhausted: permit.exhausted
-      };
-      document.getElementById('summary').innerHTML = renderSummary(summary);
-      document.getElementById('watchers').innerHTML = watchersArray.map(renderWatcher).join('');
-      if (data.lastUpdate) {
-        const t = new Date(data.lastUpdate);
-        const el = document.getElementById('lastUpdatedTop');
-        el.textContent = 'Last updated: ' + t.toLocaleTimeString();
-        const ageSeconds = (Date.now() - t.getTime()) / 1000;
-        if (ageSeconds > 30) el.classList.add('stale'); else el.classList.remove('stale');
-      }
-    }
+function showData(data) {
+  // DEBUG: Let's see what we're actually getting
+  console.log('=== SHOWDATA DEBUG ===');
+  console.log('Full data received:', data);
+  console.log('typeof data:', typeof data);
+  console.log('data.watchers exists:', !!data.watchers);
+  console.log('data.summary exists:', !!data.summary);
+  
+  if (data.watchers) {
+    console.log('data.watchers keys:', Object.keys(data.watchers));
+    console.log('data.watchers type:', typeof data.watchers);
+    console.log('Number of watchers:', Object.keys(data.watchers).length);
+  }
+  console.log('=== END DEBUG ===');
+
+  // Use the new summary/dashboard layout
+  const watchersArray = Object.values(data.watchers || {}).map(normalizeWatcher);
+  console.log('watchersArray length:', watchersArray.length);
+  console.log('watchersArray:', watchersArray);
+  
+  const health = computeHealthSummary(watchersArray);
+  const permit = computePermitSummary(watchersArray);
+  const summary = {
+    total: watchersArray.length,
+    healthy: health.healthy,
+    unstable: health.unstable,
+    broken: health.broken,
+    sufficient: permit.sufficient,
+    critical: permit.critical,
+    exhausted: permit.exhausted
+  };
+  
+  console.log('Computed summary:', summary);
+  
+  document.getElementById('summary').innerHTML = renderSummary(summary);
+  document.getElementById('watchers').innerHTML = watchersArray.map(renderWatcher).join('');
+  if (data.lastUpdate) {
+    const t = new Date(data.lastUpdate);
+    const el = document.getElementById('lastUpdatedTop');
+    el.textContent = 'Last updated: ' + t.toLocaleTimeString();
+    const ageSeconds = (Date.now() - t.getTime()) / 1000;
+    if (ageSeconds > 30) el.classList.add('stale'); else el.classList.remove('stale');
+  }
+}
 
     // --- Summary helpers and normalizers (from your new dashboard_html.ts) ---
     function getNetworkClass(network) {

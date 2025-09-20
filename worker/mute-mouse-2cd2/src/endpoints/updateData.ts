@@ -69,7 +69,7 @@ export class UpdateData extends OpenAPIRoute {
         const lastReset = new Date(rate.lastReset);
         const hours = (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60);
 
-        if (hours < 1 && rate.writes >= 5) {
+        if (hours < 1 && rate.writes >= 100) {
           // bump violation count on user record
           const userDataRaw = await c.env.USERS_KV.get(`user:${publicId}`);
           if (userDataRaw) {
@@ -109,11 +109,16 @@ export class UpdateData extends OpenAPIRoute {
         return c.json({ error: "Invalid payload structure" }, 400);
       }
 
-      // --- Check revision monotonicity
-      if (version <= (userData.revision || 0)) {
+// --- Check revision monotonicity (WITH DEBUG)
+      const currentRevision = userData.revision || 0;
+      console.log(`[DEBUG] Version check: incoming=${version}, stored=${currentRevision}, userData:`, JSON.stringify(userData, null, 2));
+      
+      if (version <= currentRevision) {
+        console.log(`[DEBUG] REJECTING: ${version} <= ${currentRevision}`);
         return c.json({ error: "Stale revision" }, 409);
       }
-
+      
+      console.log(`[DEBUG] ACCEPTING: ${version} > ${currentRevision}`);
       // --- Limit payload size (25MB)
       const approxSize = JSON.stringify(body).length;
       if (approxSize > 25 * 1024 * 1024) {
