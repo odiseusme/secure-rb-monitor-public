@@ -20,14 +20,64 @@ export const DASHBOARD_HTML = `
       <div id="lastUpdatedTop" class="last-updated-top">Last updated: --</div>
     </div>
 
-    <div id="login" class="login">
-      <h2>Enter Dashboard Passphrase</h2>
-      <input type="password" id="pass" placeholder="Enter your passphrase">
-      <br>
-      <button onclick="decrypt()">Access Dashboard</button>
-      <div id="error" class="error"></div>
+<div id="login" class="login">
+      <div class="login-container">
+        <div class="login-header">
+          <div class="lock-icon">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6z"/>
+            </svg>
+          </div>
+          <h1 class="login-title">Secure Access</h1>
+          <p class="login-subtitle">Enter your passphrase to access the<br>Rosen Bridge Watchers monitoring dashboard</p>
+        </div>
+        
+        <form>
+          <div class="form-group">
+            <label class="form-label" for="pass">Passphrase</label>
+            <div class="password-input-container">
+              <input 
+                type="password" 
+                id="pass" 
+                class="form-input"
+                placeholder="Enter your secure passphrase"
+                autocomplete="current-password"
+              >
+              <button type="button" id="togglePassword" class="password-toggle" title="Show password">
+                <svg id="eyeIcon" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          
+          <div class="form-group checkbox-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="rememberPassword" class="checkbox-input">
+              <span class="checkbox-custom"></span>
+              Remember passphrase
+            </label>
+          </div>
+          
+          <button type="submit" class="submit-button" id="submitBtn">
+            Access Dashboard
+            <div class="spinner"></div>
+          </button>
+          
+          <div class="error-message" id="error">
+          </div>
+        </form>
+        
+        <div class="security-note">
+          <div class="security-icon">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
+            </svg>
+            End-to-end encrypted monitoring
+          </div>
+        </div>
+      </div>
     </div>
-
     <div id="content" style="display:none;">
       <div id="summary" class="summary"></div>
       <div id="watchers"></div>
@@ -292,10 +342,109 @@ export const DASHBOARD_HTML = `
       );
     }
 
-    // Enter key support for login
-    document.getElementById('pass').addEventListener('keypress', function(e) {
-      if (e.key === 'Enter') decrypt();
-    });
+// Enhanced login functionality
+document.addEventListener('DOMContentLoaded', function() {
+  const passInput = document.getElementById('pass');
+  const toggleBtn = document.getElementById('togglePassword');
+  const eyeIcon = document.getElementById('eyeIcon');
+  const rememberCheckbox = document.getElementById('rememberPassword');
+  const submitBtn = document.getElementById('submitBtn');
+  const form = document.querySelector('#login form');
+  
+  // Load saved password if remember is enabled
+  if (localStorage.getItem('rememberPassword') === 'true') {
+    const savedPass = localStorage.getItem('savedPassphrase');
+    if (savedPass) {
+      passInput.value = savedPass;
+      rememberCheckbox.checked = true;
+    }
+  }
+  
+  // Toggle password visibility
+  toggleBtn.addEventListener('click', function() {
+    const isPassword = passInput.type === 'password';
+    passInput.type = isPassword ? 'text' : 'password';
+    
+    // Update eye icon
+    eyeIcon.innerHTML = isPassword 
+      ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"><line x1="1" y1="1" x2="23" y2="23"></line></path>'
+      : '<path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>';
+    
+    toggleBtn.title = isPassword ? 'Hide password' : 'Show password';
+    passInput.focus();
+  });
+  
+  // Enter key support
+  passInput.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      decrypt();
+    }
+  });
+  
+  // Form submit
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    decrypt();
+  });
+  
+  // Handle remember password
+  function handleRememberPassword() {
+    if (rememberCheckbox.checked) {
+      localStorage.setItem('rememberPassword', 'true');
+      localStorage.setItem('savedPassphrase', passInput.value);
+    } else {
+      localStorage.removeItem('rememberPassword');
+      localStorage.removeItem('savedPassphrase');
+    }
+  }
+  
+  // Update decrypt function to handle new UI
+  window.originalDecrypt = window.decrypt;
+  window.decrypt = async function() {
+    const pass = passInput.value;
+    if (!pass) {
+      showError('Please enter your passphrase');
+      passInput.focus();
+      return;
+    }
+    
+    // Show loading state
+    submitBtn.classList.add('loading');
+    submitBtn.disabled = true;
+    document.getElementById('error').textContent = '';
+    
+    try {
+      const res = await fetch('/api/blob/' + PUBLIC_ID);
+      if (!res.ok) throw new Error('Failed to fetch data');
+      const j = await res.json();
+      const saltB64 = j.userInfo.salt;
+      const iterations = j.userInfo.kdfParams?.iterations || DEFAULT_KDF_ITERS;
+      const data = await decryptData(j.data, pass, saltB64, iterations);
+      
+      // Handle remember password
+      handleRememberPassword();
+      
+      // Hide login, show content
+      document.getElementById('login').style.display = 'none';
+      document.getElementById('content').style.display = 'block';
+      showData(data);
+    } catch(e) {
+      showError('Invalid passphrase or decryption failed');
+      console.error('Decrypt error:', e);
+      passInput.select();
+    } finally {
+      submitBtn.classList.remove('loading');
+      submitBtn.disabled = false;
+    }
+  };
+  
+  function showError(message) {
+    const errorDiv = document.getElementById('error');
+    errorDiv.textContent = message;
+    errorDiv.classList.add('show');
+  }
+});    
   </script>
 </body>
 </html>

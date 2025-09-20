@@ -39,41 +39,11 @@ const CONFIG_FILE = path.join(__dirname, '.cloudflare-config.json');
 const STATUS_FILE = path.join(__dirname, 'public', 'status.json');
 const LAST_HASH_FILE = path.join(__dirname, '.last-sync-hash');
 
-async function promptPassphrase() {
-  const readline = require('readline').createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
-  
-  return new Promise((resolve) => {
-    // Hide input for password
-    const originalWrite = process.stdout.write;
-    let hidden = false;
-    
-    process.stdout.write = function(chunk, encoding, fd) {
-      if (hidden) return true;
-      return originalWrite.apply(process.stdout, arguments);
-    };
-    
-    readline.question('Enter your dashboard passphrase: ', (answer) => {
-      hidden = false;
-      process.stdout.write = originalWrite;
-      console.log(); // New line after hidden input
-      readline.close();
-      resolve(answer.trim());
-    });
-    
-    hidden = true;
-  });
-}
-
 class CloudflareSync {
   constructor() {
     this.config = null;
-    this.encryptionKey = null;
     this.lastHash = null;
     this.version = 1;
-    this.passphrase = null; // Store securely in memory
     
     this.loadConfig();
     this.loadLastHash();
@@ -87,25 +57,9 @@ class CloudflareSync {
 
     this.config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
     
-    if (!this.config._encryptionKey) {
-      console.error('Encryption key not found in configuration.');
-      process.exit(1);
-    }
-
-    // Convert Buffer to Uint8Array for Web Crypto compatibility
-    const keyBuffer = Buffer.from(this.config._encryptionKey, 'base64');
-    this.encryptionKey = new Uint8Array(keyBuffer);
+    // Using passphrase-based encryption, no pre-derived key needed
+    console.log(`[INIT] Using passphrase-based encryption`);
     console.log(`[INIT] Loaded configuration for user: ${this.config.publicId}`);
-  }
-
-  async initialize() {
-    // Prompt for passphrase at startup
-    this.passphrase = await promptPassphrase();
-    if (!this.passphrase || this.passphrase.length < 8) {
-      console.error('Invalid passphrase. Must be at least 8 characters.');
-      process.exit(1);
-    }
-    console.log('[INIT] Passphrase accepted - ready to sync');
   }
 
   loadLastHash() {
@@ -130,47 +84,46 @@ class CloudflareSync {
     fs.writeFileSync(LAST_HASH_FILE, JSON.stringify(data, null, 2));
   }
 
-calculateHash(data) {
-  return crypto.createHash('sha256').update(normalizeJsonString(data)).digest('hex');
-}
+  calculateHash(data) {
+    return crypto.createHash('sha256').update(normalizeJsonString(data)).digest('hex');
+  }
 
-  async uploadToCloudflare(encryptedData) {
-const workerUrl = process.env.BASE_URL || (this.config.baseUrl || this.config.dashboardUrl.split('/d/')[0]);
-console.log('[DEBUG] workerUrl =', workerUrl);
+  async uploadToCloudflare() {
+    const workerUrl = process.env.BASE_URL || (this.config.baseUrl || this.config.dashboardUrl.split('/d/')[0]);
+    console.log('[DEBUG] workerUrl =', workerUrl);
 
+    // NEW: build encrypted payload (GCM) from the current status.json
+    const raw = fs.readFileSync(STATUS_FILE, 'utf8');
+    const data = JSON.parse(raw);
 
-// NEW: build encrypted payload (GCM) from the current status.json
-const raw = fs.readFileSync(STATUS_FILE, 'utf8');
-const data = JSON.parse(raw);
+    const { payload, thisHash } = await buildEncryptedPayloadGCM(
+      data,
+      { version: (this.version ?? 1), prevHash: this.lastHash }
+    );
 
-const { payload, thisHash } = await buildEncryptedPayloadGCM(
-  data,
-  { version: (this.version ?? 1), prevHash: this.lastHash }
-);
+    // POST the encrypted payload to the Worker
+    const response = await fetch(`${workerUrl}/api/update`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.config.writeToken || WRITE_TOKEN}`
+      },
+      body: JSON.stringify(payload)
+    });
 
-// POST the encrypted payload to the Worker
-const response = await fetch(`${workerUrl}/api/update`, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${this.config.writeToken || WRITE_TOKEN}`
-  },
-  body: JSON.stringify(payload)
-});
+    // Handle result
+    if (!response.ok) {
+      const body = await response.text();
+      console.error(`Upload failed: ${response.status}`, body);
+      return false;
+    }
 
-// Handle result
-if (!response.ok) {
-  const body = await response.text();
-  console.error(`Upload failed: ${response.status}`, body);
-  return false;
-}
-
-// Success: store hash & bump version
-this.saveLastHash(thisHash);
-this.version = (this.version ?? 1) + 1;
-console.log('Upload OK, version:', this.version - 1, 'bytes:', payload.ciphertext.length);
-return true;
-}
+    // Success: store hash & bump version
+    this.saveLastHash(thisHash);
+    this.version = (this.version ?? 1) + 1;
+    console.log('Upload OK, version:', this.version - 1, 'bytes:', payload.ciphertext.length);
+    return true;
+  }
 
   async syncIfChanged() {
     try {
@@ -189,20 +142,13 @@ return true;
 
       console.log(`[SYNC] Changes detected (${this.lastHash ? this.lastHash.substring(0, 8) : 'none'}... → ${currentHash.substring(0, 8)}...)`);
 
-const result = await this.uploadToCloudflare();   // now builds & uploads inside
-if (result) {
-  this.lastHash = currentHash;                   // keep in sync with our precomputed hash
-  return true;
-}
-return false;
-
-
-      this.version = result.revision || (this.version + 1);
-      this.lastHash = currentHash;
-      this.saveLastHash(currentHash);
-
-      console.log(`[SYNC] Successfully uploaded to Cloudflare (revision: ${this.version})`);
-      return true;
+      const result = await this.uploadToCloudflare();
+      if (result) {
+        this.lastHash = currentHash;
+        console.log(`[SYNC] Successfully uploaded to Cloudflare (revision: ${this.version - 1})`);
+        return true;
+      }
+      return false;
 
     } catch (err) {
       console.error('[SYNC] Sync failed:', err.message);
@@ -237,9 +183,6 @@ return false;
 async function main() {
   const args = process.argv.slice(2);
   const sync = new CloudflareSync();
-  
-  // Initialize (prompt for passphrase)
-  await sync.initialize();
 
   if (args.includes('--once')) {
     await sync.syncOnce();
