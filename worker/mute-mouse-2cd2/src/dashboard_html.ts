@@ -266,7 +266,7 @@ function showData(data) {
           '<div class="summary-card healthy">' +
             '<h3>' +
               '<span class="count-num">' + summary.healthy + '</span>' +
-              '<span class="count-div">/</span>' +
+              '<span class="count-div"> / </span>' +
               '<span class="count-den">' + summary.total + '</span>' +
             '</h3>' +
             '<p>Healthy</p>' +
@@ -274,7 +274,7 @@ function showData(data) {
           '<div class="summary-card unstable">' +
             '<h3>' +
               '<span class="count-num">' + summary.unstable + '</span>' +
-              '<span class="count-div">/</span>' +
+              '<span class="count-div"> / </span>' +
               '<span class="count-den">' + summary.total + '</span>' +
             '</h3>' +
             '<p>Unstable</p>' +
@@ -282,7 +282,7 @@ function showData(data) {
           '<div class="summary-card broken">' +
             '<h3>' +
               '<span class="count-num">' + summary.broken + '</span>' +
-              '<span class="count-div">/</span>' +
+              '<span class="count-div"> / </span>' +
               '<span class="count-den">' + summary.total + '</span>' +
             '</h3>' +
             '<p>Broken or Offline</p>' +
@@ -317,7 +317,7 @@ function showData(data) {
       const permitsHTML =
         '<div class="status-row-2col">' +
           '<div class="status-col"><strong>Permits:</strong> ' + avail + '/' + total + '</div>' +
-          '<div class="status-col right"><strong>Status:</strong>' +
+          '<div class="status-col right"><strong>Status:</strong> ' +
             '<span class="permit-' + permitStatus.status.replace(/\\s+/g, '-').toLowerCase() + '">' + (permitStatus.message || '') + '</span>' +
           '</div>' +
         '</div>' +
@@ -331,7 +331,7 @@ function showData(data) {
             '<div class="network-badge ' + getNetworkClass(watcher.network) + '">' + watcher.network + '</div>' +
           '</div>' +
           '<div class="status-row-2col">' +
-            '<div class="status-col"><strong>Health:</strong>' +
+            '<div class="status-col"><strong>Health:</strong> ' +
               '<span class="' +
                 (watcher.healthStatus === 'Healthy'
                   ? 'health-green'
