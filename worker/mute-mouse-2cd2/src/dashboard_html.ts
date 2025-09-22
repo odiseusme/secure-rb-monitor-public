@@ -80,7 +80,7 @@ export const DASHBOARD_HTML = `
     </div>
     <div id="content" style="display:none;">
       <div id="summary" class="summary"></div>
-      <div id="watchers"></div>
+      <div id="watchers" class="watchers-grid"></div>
       <div class="last-update" id="lastUpdate"></div>
       <div class="staleness" id="staleness"></div>
     </div>
@@ -174,13 +174,28 @@ function showData(data) {
   
   document.getElementById('summary').innerHTML = renderSummary(summary);
   document.getElementById('watchers').innerHTML = watchersArray.map(renderWatcher).join('');
-  if (data.lastUpdate) {
-    const t = new Date(data.lastUpdate);
-    const el = document.getElementById('lastUpdatedTop');
-    el.textContent = 'Last updated: ' + t.toLocaleTimeString();
-    const ageSeconds = (Date.now() - t.getTime()) / 1000;
-    if (ageSeconds > 30) el.classList.add('stale'); else el.classList.remove('stale');
+  // Update status display
+if (data.lastUpdate) {
+  const dataTimestamp = new Date(data.lastUpdate);
+  const now = new Date();
+  const ageMinutes = Math.floor((now - dataTimestamp) / 60000);
+  
+  let statusEmoji, statusText;
+  
+  if (ageMinutes <= 5) {
+    statusEmoji = '🟢';
+    statusText = 'Monitor Online (' + ageMinutes + 'm ago)';
+  } else if (ageMinutes <= 15) {
+    statusEmoji = '🟡';
+    statusText = 'Monitor Slow (' + ageMinutes + 'm ago)';
+  } else {
+    statusEmoji = '🔴';
+    statusText = 'Monitor Unreachable (' + ageMinutes + 'm ago)';
   }
+  
+  document.getElementById('lastUpdatedTop').textContent = statusEmoji + ' ' + statusText;
+}
+  
 }
 
     // --- Summary helpers and normalizers (from your new dashboard_html.ts) ---

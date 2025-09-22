@@ -44,6 +44,13 @@ class CloudflareSync {
     this.config = null;
     this.lastHash = null;
     this.version = 1;
+    this.lastUploadTime = 0;
+    this.lastDataChangeTime = 0;
+    this.heartbeatFailed = false;
+    
+    this.HEARTBEAT_INTERVAL = 5 * 60 * 1000; // 5 minutes
+    this.NORMAL_CHECK_INTERVAL = 30 * 1000;  // 30 seconds
+    this.DEGRADED_CHECK_INTERVAL = 60 * 1000; // 60 seconds
     
     this.loadConfig();
     this.loadLastHash();
@@ -171,28 +178,73 @@ class CloudflareSync {
     }
   }
 
-  async start(intervalSeconds = 30) {
-    console.log(`[START] CloudflareSync started, checking every ${intervalSeconds} seconds`);
-    console.log(`[START] Monitoring: ${STATUS_FILE}`);
-    console.log(`[START] Dashboard: ${this.config.dashboardUrl}`);
-
-    await this.syncIfChanged();
-
-    setInterval(async () => {
-      await this.syncIfChanged();
-    }, intervalSeconds * 1000);
-  }
-
-  async syncOnce() {
-    console.log('[ONCE] Running one-time sync...');
-    const synced = await this.syncIfChanged();
-    if (synced) {
-      console.log('[ONCE] Sync completed successfully');
-    } else {
-      console.log('[ONCE] No sync needed');
+async syncIfChangedOrHeartbeat() {
+  try {
+    // Check for data changes first
+    const hasDataChanges = await this.syncIfChanged();
+    
+    if (hasDataChanges) {
+      this.lastUploadTime = Date.now();
+      this.lastDataChangeTime = Date.now();
+      this.heartbeatFailed = false; // Reset failure state on successful data upload
+      return true;
     }
-    return synced;
+    
+    // Determine heartbeat interval based on failure state
+    const heartbeatInterval = this.heartbeatFailed ? 60 * 1000 : this.HEARTBEAT_INTERVAL;
+    const timeSinceLastUpload = Date.now() - this.lastUploadTime;
+    
+    if (timeSinceLastUpload >= heartbeatInterval) {
+      console.log(`[HEARTBEAT] Sending heartbeat update (${this.heartbeatFailed ? 'retry mode' : 'normal'})`);
+      const result = await this.uploadToCloudflare();
+      if (result) {
+        this.lastUploadTime = Date.now();
+        this.heartbeatFailed = false; // Reset failure state on successful heartbeat
+        return true;
+      } else {
+        this.heartbeatFailed = true; // Mark failure for 60-second retry
+        console.log('[HEARTBEAT] Failed - switching to 60-second retry mode');
+      }
+    }
+    
+    return false;
+  } catch (err) {
+    console.error('[SYNC] Sync failed:', err.message);
+    return false;
   }
+}
+
+async start() {
+  console.log('[START] CloudflareSync started with heartbeat monitoring');
+  console.log(`[START] Monitoring: ${STATUS_FILE}`);
+  console.log(`[START] Dashboard: ${this.config.dashboardUrl}`);
+  
+  // Initial sync
+  await this.syncIfChangedOrHeartbeat();
+  
+  const runLoop = async () => {
+    await this.syncIfChangedOrHeartbeat();
+    
+    // Always check for data changes every 30 seconds
+    // Heartbeat timing logic is handled inside syncIfChangedOrHeartbeat
+    setTimeout(runLoop, this.NORMAL_CHECK_INTERVAL);
+  };
+  
+  // Start the loop
+  setTimeout(runLoop, this.NORMAL_CHECK_INTERVAL);
+}
+
+async syncOnce() {
+  console.log('[ONCE] Running one-time sync...');
+  const synced = await this.syncIfChangedOrHeartbeat();
+  if (synced) {
+    console.log('[ONCE] Sync completed successfully');
+  } else {
+    console.log('[ONCE] No sync needed');
+  }
+  return synced;
+}
+
 }
 
 async function main() {
