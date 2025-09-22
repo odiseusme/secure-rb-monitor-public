@@ -5,7 +5,7 @@ export const DASHBOARD_HTML = `
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Remote monitoring dashboard for Rosen Bridge Watchers - access health summaries from any PC or mobile device.">
-  <title>Rosen Bridge Monitor</title>
+  <title>Rosen Bridge Watchers Monitor</title>
   <link rel="stylesheet" href="/style.css">
   <link rel="icon" href="/favicon.ico?v=6" type="image/x-icon">
   <link rel="shortcut icon" href="/favicon.ico?v=6" type="image/x-icon">
@@ -16,7 +16,7 @@ export const DASHBOARD_HTML = `
 <body>
   <div class="container">
     <div class="header">
-      <h1 id="pageTitle">Rosen Bridge Monitor</h1>
+      <h1 id="pageTitle">Rosen Bridge Watchers Monitor</h1>
       <div id="lastUpdatedTop" class="last-updated-top">Last updated: --</div>
     </div>
 
@@ -175,27 +175,36 @@ function showData(data) {
   document.getElementById('summary').innerHTML = renderSummary(summary);
   document.getElementById('watchers').innerHTML = watchersArray.map(renderWatcher).join('');
   // Update status display
+// Update status display with dual timestamps
 if (data.lastUpdate) {
-  const dataTimestamp = new Date(data.lastUpdate);
+  const systemTimestamp = new Date(data.lastUpdate);
+  const dataChangeTimestamp = data.lastDataChangeTime ? new Date(data.lastDataChangeTime) : systemTimestamp;
   const now = new Date();
-  const ageMinutes = Math.floor((now - dataTimestamp) / 60000);
+  const systemAgeMinutes = Math.floor((now - systemTimestamp) / 60000);
+  const dataAgeMinutes = Math.floor((now - dataChangeTimestamp) / 60000);
   
   let statusEmoji, statusText;
   
-  if (ageMinutes <= 5) {
+  if (systemAgeMinutes <= 5) {
     statusEmoji = '🟢';
-    statusText = 'Monitor Online (' + ageMinutes + 'm ago)';
-  } else if (ageMinutes <= 15) {
+    statusText = 'Monitor Online (updated ' + systemAgeMinutes + 'm ago)';
+  } else if (systemAgeMinutes <= 10) {
     statusEmoji = '🟡';
-    statusText = 'Monitor Slow (' + ageMinutes + 'm ago)';
+    statusText = 'Monitor Slow (updated ' + systemAgeMinutes + 'm ago)';
   } else {
     statusEmoji = '🔴';
-    statusText = 'Monitor Unreachable (' + ageMinutes + 'm ago)';
+    statusText = 'Monitor Unreachable (updated ' + systemAgeMinutes + 'm ago)';
   }
   
-  document.getElementById('lastUpdatedTop').textContent = statusEmoji + ' ' + statusText;
-}
+  const dataAgeText = dataAgeMinutes >= 60 ? Math.floor(dataAgeMinutes/60) + 'h ago' : dataAgeMinutes + 'm ago';
+  const fullStatus = statusEmoji + ' ' + statusText + ' | Recent change in data: ' + dataAgeText;
   
+const el = document.getElementById('lastUpdatedTop');
+el.textContent = fullStatus;
+el.style.fontSize = '96%';
+document.getElementById('pageTitle').style.fontSize = '200%';
+}
+
 }
 
     // --- Summary helpers and normalizers (from your new dashboard_html.ts) ---

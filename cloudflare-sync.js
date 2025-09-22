@@ -119,10 +119,11 @@ class CloudflareSync {
         passphrase: PASS_PHRASE,
         saltB64: this.config.salt,
         writeToken: this.config.writeToken,
-        iterations: KDF_ITERS
+        iterations: KDF_ITERS,
+        lastDataChangeTime: this.lastDataChangeTime
       }
     );
-
+    
     // POST the encrypted payload to the Worker
     const response = await fetch(`${workerUrl}/api/update`, {
       method: 'POST',
@@ -287,7 +288,6 @@ function sha256b64(s) {
   return __nodeCrypto.createHash('sha256').update(s).digest('base64');
 }
 
-// === added: buildEncryptedPayloadGCM (append-only, safe) ==================
 async function buildEncryptedPayloadGCM(data, opts = {}) {
   // opts: { version?: number, prevHash?: string }
   const schemaVersion = 1;
@@ -313,6 +313,7 @@ async function buildEncryptedPayloadGCM(data, opts = {}) {
     version: (opts.version ?? 1),         // your monotonic version counter (if you track one)
     issuedAt,                             // ISO timestamp
     schemaVersion                         // bump on schema changes
+    lastDataChangeTime: opts.lastDataChangeTime || null  // track actual data changes
   };
   if (opts.prevHash) payload.prevHash = opts.prevHash;
 
