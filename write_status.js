@@ -248,12 +248,31 @@ async function runBatches(thunks, limit) {
     }
     updateInProgress = true;
 
-    const watchers = CONFIG.watchers || [];
-    console.log(`[API] Discovered ${watchers.length} watchers from configuration`);
-    if (!watchers.length) {
-      console.warn('[WARN] No watchers found in configuration');
-      return;
-    }
+  const watchers = CONFIG.watchers || [];
+  console.log(`[API] Discovered ${watchers.length} watchers from configuration`);
+  if (!watchers.length) {
+    console.warn('[WARN] No watchers found in configuration');
+    // Always write a valid status.json even if no watchers
+    const summary = {
+      total: 0,
+      healthy: 0,
+      unstable: 0,
+      broken: 0,
+      sufficient: 0,
+      critical: 0,
+      exhausted: 0
+    };
+    const payload = {
+      summary,
+      watchers: {},
+      lastUpdate: new Date().toISOString()
+    };
+    const tmpFile = CONFIG.statusFile + ".tmp";
+    fs.writeFileSync(tmpFile, JSON.stringify(payload, null, 2));
+    fs.renameSync(tmpFile, CONFIG.statusFile);
+    console.log(`[WRITE] Updated status.json with 0 watchers`);
+    return; // Still exit, but after writing status.json
+  }
 
     const CONCURRENCY = Number(process.env.COLLECT_CONCURRENCY || 4);
     console.log(`[COLLECT] Processing ${watchers.length} watchers with concurrency=${CONCURRENCY}...`);

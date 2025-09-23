@@ -1,351 +1,442 @@
 #!/usr/bin/env node
-/**
- * Cloudflare Sync Service for Rosen Bridge Monitor
- * Watches public/status.json and uploads to Cloudflare only when content changes
- */
+// Cloudflare sync script for Rosen Bridge Monitor
+// Watches public/status.json and uploads changes to Cloudflare only when content updates
 
-const fs   = require('fs');
+const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-// Crypto helper functions (AES-CBC/GCM via WebCrypto)
-const { encryptGCM, encryptCBC, b64encode } = require('./cryptoHelpers');
-
-// KDF/passphrase inputs (env-configurable)
-const PASS_PHRASE = process.env.DASH_PASSPHRASE || 'TestPassphrase123!';           // TODO: set real passphrase via env
-const SALT_B64    = process.env.DASH_SALT_B64   || '1p7udJGXwrfk5IDzQUqSNw==';     // Will be overridden by config.salt
-const KDF_ITERS   = Number(process.env.DASH_KDF_ITERS || 100000);
-
-// Worker endpoint & auth (env-configurable)
-const BASE_URL    = process.env.BASE_URL || 'http://localhost:38472';
-const WRITE_TOKEN = process.env.WRITE_TOKEN || '';
-
-// Safe fetch fallback
+// Safe fetch fallback (built-in or node-fetch)
 let fetch;
 try {
   fetch = globalThis.fetch;
   if (!fetch) throw new Error('No built-in fetch');
+  console.log('[NETWORK] Using built-in fetch');
 } catch {
   try {
     fetch = require('node-fetch');
+    console.log('[NETWORK] Using node-fetch module');
   } catch (err) {
-    console.error('ERROR: No fetch implementation available');
-    console.error('Install node-fetch: npm install node-fetch');
+    console.error('[ERROR] No fetch implementation available');
     process.exit(1);
   }
 }
 
-const CONFIG_FILE = path.join(__dirname, '.cloudflare-config.json');
-const STATUS_FILE = path.join(__dirname, 'public', 'status.json');
-const LAST_HASH_FILE = path.join(__dirname, '.last-sync-hash');
+// Configuration
+const CONFIG = {
+  statusFile: path.join(__dirname, 'public', 'status.json'),
+  cloudflareConfigFile: path.join(__dirname, '.cloudflare-config.json'),
+  lastHashFile: path.join(__dirname, '.last-sync-hash'),
+  watchInterval: Number(process.env.WATCH_INTERVAL) || 5000, // 5 seconds
+  timeout: Number(process.env.FETCH_TIMEOUT) || 30000, // 30 seconds
+  maxRetries: Number(process.env.MAX_RETRIES) || 3,
+};
 
-class CloudflareSync {
-  constructor() {
-    this.config = null;
-    this.lastHash = null;
-    this.version = 1;
-    this.lastUploadTime = 0;
-    this.lastDataChangeTime = 0;
-    this.heartbeatFailed = false;
-    
-    this.HEARTBEAT_INTERVAL = 5 * 60 * 1000; // 5 minutes
-    this.NORMAL_CHECK_INTERVAL = 30 * 1000;  // 30 seconds
-    this.DEGRADED_CHECK_INTERVAL = 60 * 1000; // 60 seconds
-    
-    this.loadConfig();
-    this.loadLastHash();
+// Environment variables
+const ENV = {
+  BASE_URL: process.env.BASE_URL,
+  WRITE_TOKEN: process.env.WRITE_TOKEN,
+  DASH_PASSPHRASE: process.env.DASH_PASSPHRASE,
+  DASH_SALT_B64: process.env.DASH_SALT_B64,
+};
+
+// State
+let cloudflareConfig = null;
+let lastKnownHash = null;
+let watchTimeout = null;
+let isShuttingDown = false;
+
+/**
+ * Enhanced logging with timestamps and categories
+ */
+function log(category, message, ...args) {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] [${category}] ${message}`, ...args);
+}
+
+function logError(category, message, error) {
+  const timestamp = new Date().toISOString();
+  console.error(`[${timestamp}] [${category}] ${message}`, error?.message || error);
+  if (error?.stack) {
+    console.error(`[${timestamp}] [${category}] Stack:`, error.stack);
   }
+}
 
-  loadConfig() {
-    if (!fs.existsSync(CONFIG_FILE)) {
-      console.error('Configuration file not found. Run setup-cloudflare.js first.');
-      process.exit(1);
+/**
+ * Validate environment variables
+ */
+function validateEnvironment() {
+  log('INIT', 'Validating environment variables...');
+  const missing = [];
+  Object.entries(ENV).forEach(([key, value]) => {
+    if (!value) {
+      missing.push(key);
+    } else {
+      log('ENV', `${key}: ${'*'.repeat(Math.min(8, value.length))}`);
     }
-
-    this.config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-    
-    // Using passphrase-based encryption, no pre-derived key needed
-    console.log(`[INIT] Using passphrase-based encryption`);
-    console.log(`[INIT] Loaded configuration for user: ${this.config.publicId}`);
-  }
-
-  loadLastHash() {
-    if (fs.existsSync(LAST_HASH_FILE)) {
-      try {
-        const data = JSON.parse(fs.readFileSync(LAST_HASH_FILE, 'utf8'));
-        this.lastHash = data.hash;
-        this.version = data.version || 1;
-        console.log(`[INIT] Last sync hash loaded: ${this.lastHash.substring(0, 8)}...`);
-      } catch (err) {
-        console.warn('[INIT] Could not load last sync hash, treating as first run');
-      }
-    }
-  }
-
-  saveLastHash(hash, version = null) {
-    const data = {
-      hash,
-      version: version || this.version,
-      timestamp: new Date().toISOString()
-    };
-    fs.writeFileSync(LAST_HASH_FILE, JSON.stringify(data, null, 2));
-  }
-
-  calculateHash(data) {
-    // Create a copy without the lastUpdate field to avoid false changes
-    const dataForHash = { ...data };
-    delete dataForHash.lastUpdate;
-    return crypto.createHash('sha256').update(normalizeJsonString(dataForHash)).digest('hex');
-  }
-
-  async uploadToCloudflare() {
-    const workerUrl = process.env.BASE_URL || (this.config.baseUrl || this.config.dashboardUrl.split('/d/')[0]);
-    console.log('[DEBUG] workerUrl =', workerUrl);
-
-    // NEW: build encrypted payload (GCM) from the current status.json
-    const raw = fs.readFileSync(STATUS_FILE, 'utf8');
-    const data = JSON.parse(raw);
-    
-    // Data is being encrypted successfully
-
-    // Increment version BEFORE upload attempt
-    // Start with a high version number to avoid conflicts with existing Worker data
-    const nextVersion = Math.max((this.version ?? 1) + 1, 4000);
-    const { payload, thisHash } = await buildEncryptedPayloadGCM(
-      data,
-      { 
-        version: nextVersion, 
-        prevHash: this.lastHash,
-        passphrase: PASS_PHRASE,
-        saltB64: this.config.salt,
-        writeToken: this.config.writeToken,
-        iterations: KDF_ITERS,
-        lastDataChangeTime: this.lastDataChangeTime
-      }
-    );
-    
-    // POST the encrypted payload to the Worker
-    const response = await fetch(`${workerUrl}/api/update`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.writeToken || WRITE_TOKEN}`
-      },
-      body: JSON.stringify(payload)
-    });
-
-    // Handle result
-    if (!response.ok) {
-      const body = await response.text();
-      console.error(`Upload failed: ${response.status}`, body);
-      return false;
-    }
-
-    // Success: store hash & bump version
-    this.saveLastHash(thisHash, nextVersion);
-    this.version = nextVersion;
-    console.log('Upload OK, version:', nextVersion, 'bytes:', payload.ciphertext.length);
-    return true;
-  }
-
-  async syncIfChanged() {
-    try {
-      if (!fs.existsSync(STATUS_FILE)) {
-        console.log('[SYNC] Status file not found, skipping sync');
-        return false;
-      }
-
-      const statusData = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
-      const currentHash = this.calculateHash(statusData);
-
-      if (currentHash === this.lastHash) {
-        console.log('[SYNC] No changes detected, skipping upload');
-        return false;
-      }
-
-      console.log(`[SYNC] Changes detected (${this.lastHash ? this.lastHash.substring(0, 8) : 'none'}... → ${currentHash.substring(0, 8)}...)`);
-
-      const result = await this.uploadToCloudflare();
-      if (result) {
-        this.lastHash = currentHash;
-        console.log(`[SYNC] Successfully uploaded to Cloudflare (revision: ${this.version - 1})`);
-        return true;
-      }
-      return false;
-
-    } catch (err) {
-      console.error('[SYNC] Sync failed:', err.message);
-      return false;
-    }
-  }
-
-async syncIfChangedOrHeartbeat() {
-  try {
-    // Check for data changes first
-    const hasDataChanges = await this.syncIfChanged();
-    
-    if (hasDataChanges) {
-      this.lastUploadTime = Date.now();
-      this.lastDataChangeTime = Date.now();
-      this.heartbeatFailed = false; // Reset failure state on successful data upload
-      return true;
-    }
-    
-    // Determine heartbeat interval based on failure state
-    const heartbeatInterval = this.heartbeatFailed ? 60 * 1000 : this.HEARTBEAT_INTERVAL;
-    const timeSinceLastUpload = Date.now() - this.lastUploadTime;
-    
-    if (timeSinceLastUpload >= heartbeatInterval) {
-      console.log(`[HEARTBEAT] Sending heartbeat update (${this.heartbeatFailed ? 'retry mode' : 'normal'})`);
-      const result = await this.uploadToCloudflare();
-      if (result) {
-        this.lastUploadTime = Date.now();
-        this.heartbeatFailed = false; // Reset failure state on successful heartbeat
-        return true;
-      } else {
-        this.heartbeatFailed = true; // Mark failure for 60-second retry
-        console.log('[HEARTBEAT] Failed - switching to 60-second retry mode');
-      }
-    }
-    
-    return false;
-  } catch (err) {
-    console.error('[SYNC] Sync failed:', err.message);
-    return false;
-  }
-}
-
-async start() {
-  console.log('[START] CloudflareSync started with heartbeat monitoring');
-  console.log(`[START] Monitoring: ${STATUS_FILE}`);
-  console.log(`[START] Dashboard: ${this.config.dashboardUrl}`);
-  
-  // Initial sync
-  await this.syncIfChangedOrHeartbeat();
-  
-  const runLoop = async () => {
-    await this.syncIfChangedOrHeartbeat();
-    
-    // Always check for data changes every 30 seconds
-    // Heartbeat timing logic is handled inside syncIfChangedOrHeartbeat
-    setTimeout(runLoop, this.NORMAL_CHECK_INTERVAL);
-  };
-  
-  // Start the loop
-  setTimeout(runLoop, this.NORMAL_CHECK_INTERVAL);
-}
-
-async syncOnce() {
-  console.log('[ONCE] Running one-time sync...');
-  const synced = await this.syncIfChangedOrHeartbeat();
-  if (synced) {
-    console.log('[ONCE] Sync completed successfully');
-  } else {
-    console.log('[ONCE] No sync needed');
-  }
-  return synced;
-}
-
-}
-
-async function main() {
-  const args = process.argv.slice(2);
-  const sync = new CloudflareSync();
-
-  if (args.includes('--once')) {
-    await sync.syncOnce();
-    process.exit(0);
-  }
-
-  const interval = parseInt(args.find(arg => arg.startsWith('--interval='))?.split('=')[1]) || 30;
-  await sync.start(interval);
-}
-
-if (require.main === module) {
-  main().catch(console.error);
-}
-
-module.exports = CloudflareSync;
-
-// === added: stable JSON stringify and hash helpers (append-only) ===
-let __nodeCrypto;
-try { __nodeCrypto = require('crypto'); } catch {}
-
-function normalizeJsonString(objOrString) {
-  if (typeof objOrString === 'string') return objOrString;
-  if (!objOrString || typeof objOrString !== 'object') return JSON.stringify(objOrString);
-  // stable: sort top-level keys (good enough for change detection)
-  const sortedKeys = Object.keys(objOrString).sort();
-  const sortedObj = {};
-  for (const key of sortedKeys) {
-    sortedObj[key] = objOrString[key];
-  }
-  return JSON.stringify(sortedObj);
-}
-
-function sha256b64(s) {
-  if (!__nodeCrypto) return null;
-  return __nodeCrypto.createHash('sha256').update(s).digest('base64');
-}
-
-async function buildEncryptedPayloadGCM(data, opts = {}) {
-  // opts: { version?: number, prevHash?: string }
-  const schemaVersion = 1;
-  const issuedAt = new Date().toISOString();
-
-  // 1) prepare plaintext (stable JSON text for consistent hashing)
-  const jsonText = normalizeJsonString(data);
-  
-  // Data is being processed correctly
-
-  // 2) encrypt using PBKDF2-SHA256 -> AES-GCM (helpers handle WebCrypto)
-  const enc = await encryptGCM({
-    passphrase: opts.passphrase || PASS_PHRASE,   // use passed passphrase or fallback
-    saltB64:   opts.saltB64 || SALT_B64,          // use passed salt or fallback
-    plaintext: jsonText,
-    iterations: opts.iterations || KDF_ITERS      // use passed iterations or fallback
   });
-
-  // 3) envelope to send to Worker
-  const payload = {
-    nonce: enc.nonceB64,                  // 12-byte GCM nonce (base64)
-    ciphertext: enc.ctB64,                // includes auth tag
-    version: (opts.version ?? 1),         // your monotonic version counter (if you track one)
-    issuedAt,                             // ISO timestamp
-    schemaVersion                         // bump on schema changes
-    lastDataChangeTime: opts.lastDataChangeTime || null  // track actual data changes
-  };
-  if (opts.prevHash) payload.prevHash = opts.prevHash;
-
-  // 4) compute current hash for caller to store/compare (helps skip unchanged)
-  const thisHash = sha256b64(jsonText);
-
-  return { payload, thisHash };
+  if (missing.length > 0) {
+    logError('ENV', `Missing required environment variables: ${missing.join(', ')}`);
+    log('ENV', 'Required environment variables:');
+    log('ENV', '  BASE_URL - Cloudflare endpoint URL');
+    log('ENV', '  WRITE_TOKEN - Authentication token for uploads');
+    log('ENV', '  DASH_PASSPHRASE - Dashboard passphrase');
+    log('ENV', '  DASH_SALT_B64 - Base64 encoded salt');
+    return false;
+  }
+  log('ENV', 'All required environment variables are present');
+  return true;
 }
-module.exports.buildEncryptedPayloadGCM = buildEncryptedPayloadGCM;
 
-// === added: dry-run builder (only runs if DRY_RUN_BUILD=1) ===============
-if (require.main === module && process.env.DRY_RUN_BUILD === '1') {
-  (async () => {
+/**
+ * Load and validate Cloudflare configuration
+ */
+function loadCloudflareConfig() {
+  log('CONFIG', `Loading Cloudflare configuration from ${CONFIG.cloudflareConfigFile}`);
+  try {
+    if (!fs.existsSync(CONFIG.cloudflareConfigFile)) {
+      logError('CONFIG', `Cloudflare config file not found: ${CONFIG.cloudflareConfigFile}`);
+      log('CONFIG', 'Creating example .cloudflare-config.json file...');
+      const exampleConfig = {
+        endpoint: "https://api.cloudflare.com/client/v4",
+        accountId: "your-account-id",
+        namespaceId: "your-kv-namespace-id",
+        keyName: "status-data",
+        encryption: {
+          algorithm: "aes-256-gcm",
+          keyDerivation: "pbkdf2"
+        }
+      };
+      try {
+        fs.writeFileSync(CONFIG.cloudflareConfigFile, JSON.stringify(exampleConfig, null, 2));
+        log('CONFIG', 'Example .cloudflare-config.json created - please configure it with your actual values');
+      } catch (writeErr) {
+        logError('CONFIG', 'Failed to create example config file', writeErr);
+      }
+      return false;
+    }
+    const configData = fs.readFileSync(CONFIG.cloudflareConfigFile, 'utf8');
+    cloudflareConfig = JSON.parse(configData);
+    // Validate required config fields
+    const requiredFields = ['endpoint', 'accountId', 'namespaceId', 'keyName'];
+    const missingFields = requiredFields.filter(field => !cloudflareConfig[field]);
+    if (missingFields.length > 0) {
+      logError('CONFIG', `Missing required fields in Cloudflare config: ${missingFields.join(', ')}`);
+      return false;
+    }
+    log('CONFIG', 'Cloudflare configuration loaded successfully');
+    log('CONFIG', `Endpoint: ${cloudflareConfig.endpoint}`);
+    log('CONFIG', `Account ID: ${cloudflareConfig.accountId}`);
+    log('CONFIG', `Namespace ID: ${cloudflareConfig.namespaceId}`);
+    log('CONFIG', `Key Name: ${cloudflareConfig.keyName}`);
+    return true;
+  } catch (err) {
+    logError('CONFIG', 'Failed to load Cloudflare configuration', err);
+    return false;
+  }
+}
+
+/**
+ * Calculate hash of file content
+ */
+function calculateFileHash(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) {
+      log('HASH', `File does not exist: ${filePath}`);
+      return null;
+    }
+    const content = fs.readFileSync(filePath, 'utf8');
+    const hash = crypto.createHash('sha256').update(content).digest('hex');
+    log('HASH', `Calculated hash for ${path.basename(filePath)}: ${hash.substring(0, 16)}...`);
+    return hash;
+  } catch (err) {
+    logError('HASH', `Failed to calculate hash for ${filePath}`, err);
+    return null;
+  }
+}
+
+/**
+ * Load last known hash from persistent storage
+ */
+function loadLastKnownHash() {
+  try {
+    if (fs.existsSync(CONFIG.lastHashFile)) {
+      lastKnownHash = fs.readFileSync(CONFIG.lastHashFile, 'utf8').trim();
+      log('HASH', `Loaded last known hash: ${lastKnownHash.substring(0, 16)}...`);
+    } else {
+      log('HASH', 'No previous hash file found - will sync on first change');
+      lastKnownHash = null;
+    }
+  } catch (err) {
+    logError('HASH', 'Failed to load last known hash', err);
+    lastKnownHash = null;
+  }
+}
+
+/**
+ * Save hash to persistent storage
+ */
+function saveLastKnownHash(hash) {
+  try {
+    fs.writeFileSync(CONFIG.lastHashFile, hash);
+    log('HASH', `Saved hash: ${hash.substring(0, 16)}...`);
+  } catch (err) {
+    logError('HASH', 'Failed to save hash', err);
+  }
+}
+
+/**
+ * Fetch current revision from Cloudflare with enhanced error handling
+ */
+async function fetchCurrentRevision() {
+  log('FETCH', 'Fetching current revision from Cloudflare...');
+  const url = `${cloudflareConfig.endpoint}/accounts/${cloudflareConfig.accountId}/storage/kv/namespaces/${cloudflareConfig.namespaceId}/values/${cloudflareConfig.keyName}`;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort();
+      log('FETCH', 'Request timeout - aborting fetch operation');
+    }, CONFIG.timeout);
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${ENV.WRITE_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    log('FETCH', `Response status: ${response.status} ${response.statusText}`);
+    if (response.status === 404) {
+      log('FETCH', 'No existing data found in Cloudflare KV - this is normal for first upload');
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    const data = await response.text();
+    log('FETCH', `Retrieved ${data.length} bytes from Cloudflare`);
+    return data;
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      logError('FETCH', 'Request timed out', err);
+    } else {
+      logError('FETCH', 'Failed to fetch current revision', err);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Upload data to Cloudflare with enhanced error handling and retry logic
+ */
+async function uploadToCloudflare(data) {
+  log('UPLOAD', 'Uploading data to Cloudflare...');
+  const url = `${cloudflareConfig.endpoint}/accounts/${cloudflareConfig.accountId}/storage/kv/namespaces/${cloudflareConfig.namespaceId}/values/${cloudflareConfig.keyName}`;
+  for (let attempt = 1; attempt <= CONFIG.maxRetries; attempt++) {
     try {
-      const statusPath = path.join(process.cwd(), 'public', 'status.json');
-      const raw = fs.readFileSync(statusPath, 'utf8');
-      const data = JSON.parse(raw);
+      log('UPLOAD', `Attempt ${attempt}/${CONFIG.maxRetries}`);
+      const controller = new AbortController();
+      const timer = setTimeout(() => {
+        controller.abort();
+        log('UPLOAD', 'Request timeout - aborting upload operation');
+      }, CONFIG.timeout);
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${ENV.WRITE_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: data,
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      log('UPLOAD', `Response status: ${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unable to read error response');
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+      }
+      const result = await response.json();
+      log('UPLOAD', 'Upload successful', result);
+      return result;
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        logError('UPLOAD', `Attempt ${attempt} timed out`, err);
+      } else {
+        logError('UPLOAD', `Attempt ${attempt} failed`, err);
+      }
+      if (attempt === CONFIG.maxRetries) {
+        throw err;
+      }
+      // Exponential backoff with jitter
+      const delay = Math.min(1000 * Math.pow(2, attempt - 1) + Math.random() * 1000, 30000);
+      log('UPLOAD', `Retrying in ${Math.round(delay)}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+}
 
-      const prevHash = null;    // set to your stored last hash if you have one
-      const version  = 1;       // set to your current version counter if you track one
+/**
+ * Check for status.json changes and sync if needed
+ */
+async function checkForChanges() {
+  if (isShuttingDown) {
+    log('WATCH', 'Shutting down - skipping change check');
+    return;
+  }
+  log('WATCH', 'Checking for changes in status.json...');
+  try {
+    // Check if status.json exists
+    if (!fs.existsSync(CONFIG.statusFile)) {
+      log('WATCH', `Status file not found: ${CONFIG.statusFile}`);
+      log('WATCH', 'This is normal if write_status.js has not run yet');
+      return;
+    }
+    // Calculate current hash
+    const currentHash = calculateFileHash(CONFIG.statusFile);
+    if (!currentHash) {
+      log('WATCH', 'Failed to calculate current hash - skipping this check');
+      return;
+    }
+    // Compare with last known hash
+    if (lastKnownHash === currentHash) {
+      log('WATCH', 'No changes detected');
+      return;
+    }
+    log('WATCH', 'Changes detected - preparing to sync');
+    log('WATCH', `Previous hash: ${lastKnownHash ? lastKnownHash.substring(0, 16) + '...' : 'none'}`);
+    log('WATCH', `Current hash:  ${currentHash.substring(0, 16)}...`);
+    // Read the status data
+    const statusData = fs.readFileSync(CONFIG.statusFile, 'utf8');
+    log('WATCH', `Status data size: ${statusData.length} bytes`);
+    // Validate JSON
+    try {
+      const parsed = JSON.parse(statusData);
+      log('WATCH', `Parsed JSON with ${Object.keys(parsed).length} top-level keys`);
+      if (parsed.lastUpdate) {
+        log('WATCH', `Data last updated: ${parsed.lastUpdate}`);
+      }
+    } catch (parseErr) {
+      logError('WATCH', 'Status data is not valid JSON', parseErr);
+      return;
+    }
+    // Upload to Cloudflare
+    try {
+      await uploadToCloudflare(statusData);
+      // Update last known hash only after successful upload
+      lastKnownHash = currentHash;
+      saveLastKnownHash(currentHash);
+      log('SYNC', 'Successfully synced status data to Cloudflare');
+    } catch (uploadErr) {
+      logError('SYNC', 'Failed to upload to Cloudflare', uploadErr);
+      // Don't update lastKnownHash so we'll retry next time
+    }
+  } catch (err) {
+    logError('WATCH', 'Error during change check', err);
+  }
+}
 
-      const { payload, thisHash } = await buildEncryptedPayloadGCM(data, { version, prevHash });
+/**
+ * Start the file watcher
+ */
+function startWatcher() {
+  log('WATCH', `Starting file watcher (interval: ${CONFIG.watchInterval}ms)`);
+  log('WATCH', `Monitoring: ${CONFIG.statusFile}`);
+  // Initial check
+  checkForChanges();
+  // Set up periodic checking
+  function scheduleNext() {
+    if (!isShuttingDown) {
+      watchTimeout = setTimeout(() => {
+        checkForChanges().finally(scheduleNext);
+      }, CONFIG.watchInterval);
+    }
+  }
+  scheduleNext();
+}
 
-      console.log('DRY-RUN: payload keys =', Object.keys(payload));
-      console.log('DRY-RUN: nonce length (b64 chars) =', payload.nonce.length);
-      console.log('DRY-RUN: ciphertext length (b64 chars) =', payload.ciphertext.length);
-      console.log('DRY-RUN: issuedAt =', payload.issuedAt, 'schemaVersion =', payload.schemaVersion);
-      console.log('DRY-RUN: thisHash =', thisHash);
-      process.exit(0);
-    } catch (e) {
-      console.error('DRY-RUN BUILD FAILED:', e);
+/**
+ * Graceful shutdown
+ */
+function shutdown() {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  log('SHUTDOWN', 'Initiating graceful shutdown...');
+  if (watchTimeout) {
+    clearTimeout(watchTimeout);
+    watchTimeout = null;
+    log('SHUTDOWN', 'Cleared watch timeout');
+  }
+  log('SHUTDOWN', 'Cloudflare sync script stopped');
+  process.exit(0);
+}
+
+/**
+ * Main initialization and startup
+ */
+async function main() {
+  log('INIT', 'Starting Cloudflare sync script for Rosen Bridge Monitor');
+  log('INIT', `Process ID: ${process.pid}`);
+  log('INIT', `Node.js version: ${process.version}`);
+  log('INIT', `Working directory: ${process.cwd()}`);
+  // Set up signal handlers for graceful shutdown
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+  process.on('SIGHUP', shutdown);
+  // Handle uncaught exceptions
+  process.on('uncaughtException', (err) => {
+    logError('FATAL', 'Uncaught exception', err);
+    shutdown();
+  });
+  process.on('unhandledRejection', (reason, promise) => {
+    logError('FATAL', 'Unhandled promise rejection', reason);
+    console.error('[FATAL] Promise:', promise);
+    shutdown();
+  });
+  try {
+    // Validate environment
+    if (!validateEnvironment()) {
+      log('INIT', 'Environment validation failed - exiting');
       process.exit(1);
     }
-  })();
+    // Load Cloudflare configuration
+    if (!loadCloudflareConfig()) {
+      log('INIT', 'Cloudflare configuration failed - exiting');
+      process.exit(1);
+    }
+    // Load last known hash
+    loadLastKnownHash();
+    // Test Cloudflare connectivity
+    log('INIT', 'Testing Cloudflare connectivity...');
+    try {
+      await fetchCurrentRevision();
+      log('INIT', 'Cloudflare connectivity test successful');
+    } catch (err) {
+      logError('INIT', 'Cloudflare connectivity test failed', err);
+      log('INIT', 'Will continue anyway - connectivity issues may be temporary');
+    }
+    // Start watching for changes
+    startWatcher();
+    log('INIT', 'Cloudflare sync script started successfully');
+  } catch (err) {
+    logError('INIT', 'Failed to initialize', err);
+    process.exit(1);
+  }
 }
+
+// Start the application
+if (require.main === module) {
+  main().catch((err) => {
+    logError('MAIN', 'Startup failed', err);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  validateEnvironment,
+  loadCloudflareConfig,
+  calculateFileHash,
+  fetchCurrentRevision,
+  uploadToCloudflare,
+  checkForChanges,
+};

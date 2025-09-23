@@ -186,6 +186,10 @@ main() {
 
   # Run watcher discovery ONCE and get watcher count
   WATCHERS_FOUND=$(discover_watchers_and_generate_files)
+  if [ "$WATCHERS_FOUND" -eq 0 ]; then
+    echo '{ "watchers": [] }' > "${PROJECT_ROOT}/config.json"
+    log "No watchers found; wrote empty config.json."
+  fi
 
   # Port selection and config
   local port count host_ip display_host ip_lan current MONITOR_URL LAN_URL QR_URL

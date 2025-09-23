@@ -1,0 +1,10 @@
+{
+  "endpoint": "https://api.cloudflare.com/client/v4",
+  "accountId": "your-cloudflare-account-id",
+  "namespaceId": "test-namespace-id",
+  "keyName": "rosen-bridge-status",
+  "encryption": {
+    "algorithm": "aes-256-gcm",
+    "keyDerivation": "pbkdf2"
+  }
+}
