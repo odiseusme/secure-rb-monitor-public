@@ -1,6 +1,6 @@
 {
   "endpoint": "https://api.cloudflare.com/client/v4",
-  "accountId": "test-account-id",
+  "accountId": "your-cloudflare-account-id",
   "namespaceId": "test-namespace-id",
   "keyName": "rosen-bridge-status",
   "encryption": {
