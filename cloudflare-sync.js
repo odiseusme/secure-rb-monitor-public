@@ -312,7 +312,7 @@ async function buildEncryptedPayloadGCM(data, opts = {}) {
     ciphertext: enc.ctB64,                // includes auth tag
     version: (opts.version ?? 1),         // your monotonic version counter (if you track one)
     issuedAt,                             // ISO timestamp
-    schemaVersion                         // bump on schema changes
+    schemaVersion,                         // bump on schema changes
     lastDataChangeTime: opts.lastDataChangeTime || null  // track actual data changes
   };
   if (opts.prevHash) payload.prevHash = opts.prevHash;
