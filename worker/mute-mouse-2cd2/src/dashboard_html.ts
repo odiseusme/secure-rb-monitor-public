@@ -5,7 +5,7 @@ export const DASHBOARD_HTML = `
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Remote monitoring dashboard for Rosen Bridge Watchers - access health summaries from any PC or mobile device.">
-  <title>Rosen Bridge Monitor</title>
+  <title>Rosen Bridge Watchers Monitor</title>
   <link rel="stylesheet" href="/style.css">
   <link rel="icon" href="/favicon.ico?v=6" type="image/x-icon">
   <link rel="shortcut icon" href="/favicon.ico?v=6" type="image/x-icon">
@@ -16,7 +16,7 @@ export const DASHBOARD_HTML = `
 <body>
   <div class="container">
     <div class="header">
-      <h1 id="pageTitle">Rosen Bridge Monitor</h1>
+      <h1 id="pageTitle">Rosen Bridge Watchers Monitor</h1>
       <div id="lastUpdatedTop" class="last-updated-top">Last updated: --</div>
     </div>
 
@@ -28,10 +28,8 @@ export const DASHBOARD_HTML = `
               <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6z"/>
             </svg>
           </div>
-          <h1 class="login-title">Secure Access</h1>
-          <p class="login-subtitle">Enter your passphrase to access the<br>Rosen Bridge Watchers monitoring dashboard</p>
+          <h1 class="login-subtitle" style="font-size: 1.1rem;">Enter your passphrase to access the<br>Rosen Bridge Watchers Monitor</h1>
         </div>
-        
         <form>
           <div class="form-group">
             <label class="form-label" for="pass">Passphrase</label>
