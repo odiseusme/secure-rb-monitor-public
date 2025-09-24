@@ -53,7 +53,7 @@ export const DASHBOARD_HTML = `
             <label class="checkbox-label">
               <input type="checkbox" id="rememberPassword" class="checkbox-input">
               <span class="checkbox-custom"></span>
-              Remember passphrase
+              Save password, allow auto-refresh
             </label>
           </div>
           
@@ -89,9 +89,22 @@ export const DASHBOARD_HTML = `
     const PUBLIC_ID = "{{PUBLIC_ID}}"; // replaced by server-side code
     const DEFAULT_KDF_ITERS = 100000;
 
+    // Save password helper -- define globally!
+    function handleRememberPassword(pass) {
+      const rememberCheckbox = document.getElementById('rememberPassword');
+      if (rememberCheckbox && rememberCheckbox.checked) {
+        localStorage.setItem('rememberPassword', 'true');
+        localStorage.setItem('savedPassphrase', pass);
+      } else {
+        localStorage.removeItem('rememberPassword');
+        localStorage.removeItem('savedPassphrase');
+      }
+    }
+
     // Step 1: Login, decryption
-    async function decrypt() {
-      const pass = document.getElementById('pass').value;
+    async function decrypt(passphraseOverride) {
+      const passInput = document.getElementById('pass');
+      const pass = passphraseOverride !== undefined ? passphraseOverride : passInput.value;
       if (!pass) {
         document.getElementById('error').textContent = 'Please enter your passphrase';
         return;
@@ -104,10 +117,22 @@ export const DASHBOARD_HTML = `
         const saltB64 = j.userInfo.salt;
         const iterations = j.userInfo.kdfParams?.iterations || DEFAULT_KDF_ITERS;
         const data = await decryptData(j.data, pass, saltB64, iterations);
+
+        // Save decryption params in memory for auto-refresh
+        window.currentPassphrase = pass;
+        window.currentSalt = saltB64;
+        window.currentIterations = iterations;
+
+        // Optionally save in localStorage
+        handleRememberPassword(pass);
+
         // Hide login, show content
         document.getElementById('login').style.display = 'none';
         document.getElementById('content').style.display = 'block';
         showData(data);
+
+        // Start auto-refresh if password is saved
+        setupAutoRefresh();
       } catch(e) {
         document.getElementById('error').textContent = 'Invalid passphrase or decryption failed';
         console.error('Decrypt error:', e);
@@ -137,25 +162,7 @@ export const DASHBOARD_HTML = `
     }
 
 function showData(data) {
-  // DEBUG: Let's see what we're actually getting
-  console.log('=== SHOWDATA DEBUG ===');
-  console.log('Full data received:', data);
-  console.log('typeof data:', typeof data);
-  console.log('data.watchers exists:', !!data.watchers);
-  console.log('data.summary exists:', !!data.summary);
-  
-  if (data.watchers) {
-    console.log('data.watchers keys:', Object.keys(data.watchers));
-    console.log('data.watchers type:', typeof data.watchers);
-    console.log('Number of watchers:', Object.keys(data.watchers).length);
-  }
-  console.log('=== END DEBUG ===');
-
-  // Use the new summary/dashboard layout
   const watchersArray = Object.values(data.watchers || {}).map(normalizeWatcher);
-  console.log('watchersArray length:', watchersArray.length);
-  console.log('watchersArray:', watchersArray);
-  
   const health = computeHealthSummary(watchersArray);
   const permit = computePermitSummary(watchersArray);
   const summary = {
@@ -167,36 +174,33 @@ function showData(data) {
     critical: permit.critical,
     exhausted: permit.exhausted
   };
-  
-  console.log('Computed summary:', summary);
-  
+
   document.getElementById('summary').innerHTML = renderSummary(summary);
   document.getElementById('watchers').innerHTML = watchersArray.map(renderWatcher).join('');
   // Update status display
-if (data.lastUpdate) {
-  const dataTimestamp = new Date(data.lastUpdate);
-  const now = new Date();
-  const ageMinutes = Math.floor((now - dataTimestamp) / 60000);
-  
-  let statusEmoji, statusText;
-  
-  if (ageMinutes <= 5) {
-    statusEmoji = '🟢';
-    statusText = 'Monitor Online (' + ageMinutes + 'm ago)';
-  } else if (ageMinutes <= 15) {
-    statusEmoji = '🟡';
-    statusText = 'Monitor Slow (' + ageMinutes + 'm ago)';
-  } else {
-    statusEmoji = '🔴';
-    statusText = 'Monitor Unreachable (' + ageMinutes + 'm ago)';
+  if (data.lastUpdate) {
+    const dataTimestamp = new Date(data.lastUpdate);
+    const now = new Date();
+    const ageMinutes = Math.floor((now - dataTimestamp) / 60000);
+
+    let statusEmoji, statusText;
+
+    if (ageMinutes <= 5) {
+      statusEmoji = '🟢';
+      statusText = 'Monitor Online (' + ageMinutes + 'm ago)';
+    } else if (ageMinutes <= 15) {
+      statusEmoji = '🟡';
+      statusText = 'Monitor Slow (' + ageMinutes + 'm ago)';
+    } else {
+      statusEmoji = '🔴';
+      statusText = 'Monitor Unreachable (' + ageMinutes + 'm ago)';
+    }
+
+    document.getElementById('lastUpdatedTop').textContent = statusEmoji + ' ' + statusText;
   }
-  
-  document.getElementById('lastUpdatedTop').textContent = statusEmoji + ' ' + statusText;
-}
-  
 }
 
-    // --- Summary helpers and normalizers (from your new dashboard_html.ts) ---
+    // --- Summary helpers and normalizers ---
     function getNetworkClass(network) {
       const n = String(network || 'unknown').toLowerCase();
       return 'network-' + n;
@@ -382,7 +386,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const rememberCheckbox = document.getElementById('rememberPassword');
   const submitBtn = document.getElementById('submitBtn');
   const form = document.querySelector('#login form');
-  
+
   // Load saved password if remember is enabled
   if (localStorage.getItem('rememberPassword') === 'true') {
     const savedPass = localStorage.getItem('savedPassphrase');
@@ -391,21 +395,19 @@ document.addEventListener('DOMContentLoaded', function() {
       rememberCheckbox.checked = true;
     }
   }
-  
+
   // Toggle password visibility
   toggleBtn.addEventListener('click', function() {
     const isPassword = passInput.type === 'password';
     passInput.type = isPassword ? 'text' : 'password';
-    
     // Update eye icon
     eyeIcon.innerHTML = isPassword 
       ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"><line x1="1" y1="1" x2="23" y2="23"></line></path>'
       : '<path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>';
-    
     toggleBtn.title = isPassword ? 'Hide password' : 'Show password';
     passInput.focus();
   });
-  
+
   // Enter key support
   passInput.addEventListener('keypress', function(e) {
     if (e.key === 'Enter') {
@@ -413,70 +415,43 @@ document.addEventListener('DOMContentLoaded', function() {
       decrypt();
     }
   });
-  
+
   // Form submit
   form.addEventListener('submit', function(e) {
     e.preventDefault();
     decrypt();
   });
-  
-  // Handle remember password
-  function handleRememberPassword() {
-    if (rememberCheckbox.checked) {
-      localStorage.setItem('rememberPassword', 'true');
-      localStorage.setItem('savedPassphrase', passInput.value);
-    } else {
-      localStorage.removeItem('rememberPassword');
-      localStorage.removeItem('savedPassphrase');
+
+  // Auto-login if remembered
+  if (localStorage.getItem('rememberPassword') === 'true' && localStorage.getItem('savedPassphrase')) {
+    // Only auto-login if the dashboard is not already visible
+    if (document.getElementById('content').style.display === 'none') {
+      decrypt(localStorage.getItem('savedPassphrase'));
     }
   }
-  
-  // Update decrypt function to handle new UI
-  window.originalDecrypt = window.decrypt;
-  window.decrypt = async function() {
-    const pass = passInput.value;
-    if (!pass) {
-      showError('Please enter your passphrase');
-      passInput.focus();
-      return;
+});
+
+// Setup auto-refresh using passphrase in memory
+function setupAutoRefresh() {
+  // Only run one interval
+  if (window.dashboardRefreshInterval) return;
+  // Only start if password is saved (rememberPassword is checked)
+  if (localStorage.getItem('rememberPassword') !== 'true') return;
+
+  window.dashboardRefreshInterval = setInterval(function() {
+    // If passphrase is in memory, and dashboard is visible
+    if (window.currentPassphrase && document.getElementById('content').style.display !== 'none') {
+      fetch('/api/blob/' + PUBLIC_ID)
+        .then(res => res.json())
+        .then(j => decryptData(j.data, window.currentPassphrase, window.currentSalt, window.currentIterations))
+        .then(data => showData(data))
+        .catch(err => {
+          console.error('Auto-refresh decrypt error:', err);
+          // Optionally, show a warning or revert to login if continuous failures
+        });
     }
-    
-    // Show loading state
-    submitBtn.classList.add('loading');
-    submitBtn.disabled = true;
-    document.getElementById('error').textContent = '';
-    
-    try {
-      const res = await fetch('/api/blob/' + PUBLIC_ID);
-      if (!res.ok) throw new Error('Failed to fetch data');
-      const j = await res.json();
-      const saltB64 = j.userInfo.salt;
-      const iterations = j.userInfo.kdfParams?.iterations || DEFAULT_KDF_ITERS;
-      const data = await decryptData(j.data, pass, saltB64, iterations);
-      
-      // Handle remember password
-      handleRememberPassword();
-      
-      // Hide login, show content
-      document.getElementById('login').style.display = 'none';
-      document.getElementById('content').style.display = 'block';
-      showData(data);
-    } catch(e) {
-      showError('Invalid passphrase or decryption failed');
-      console.error('Decrypt error:', e);
-      passInput.select();
-    } finally {
-      submitBtn.classList.remove('loading');
-      submitBtn.disabled = false;
-    }
-  };
-  
-  function showError(message) {
-    const errorDiv = document.getElementById('error');
-    errorDiv.textContent = message;
-    errorDiv.classList.add('show');
-  }
-});    
+  }, 30000); // 30 seconds
+}
   </script>
 </body>
 </html>
