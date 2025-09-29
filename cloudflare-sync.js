@@ -91,15 +91,20 @@ loadLastHash() {
     }
   }
   
-  saveLastHash(hash, version = null) {
+saveLastHash(hash, version = null) {
     const data = {
       hash,
+      prevDataHash: this.prevDataHash,
       version: version || this.version,
+      sequenceNumber: this.sequenceNumber,
+      lastUploadTime: this.lastUploadTime ? new Date(this.lastUploadTime).toISOString() : null,
+      monitorStartTime: this.monitorStartTime ? new Date(this.monitorStartTime).toISOString() : null,
+      lastDataChangeTime: this.lastDataChangeTime ? new Date(this.lastDataChangeTime).toISOString() : null,
       timestamp: new Date().toISOString()
     };
     fs.writeFileSync(LAST_HASH_FILE, JSON.stringify(data, null, 2));
   }
-
+  
   calculateHash(data) {
     // Create a copy without the lastUpdate field to avoid false changes
     const dataForHash = { ...data };
