@@ -112,7 +112,7 @@ saveLastHash(hash, version = null) {
     return crypto.createHash('sha256').update(normalizeJsonString(dataForHash)).digest('hex');
   }
 
-  async uploadToCloudflare() {
+  async uploadToCloudflare(uploadType) {
     const workerUrl = process.env.BASE_URL || (this.config.baseUrl || this.config.dashboardUrl.split('/d/')[0]);
     console.log('[DEBUG] workerUrl =', workerUrl);
 
@@ -125,19 +125,22 @@ saveLastHash(hash, version = null) {
     // Increment version BEFORE upload attempt
     // Start with a high version number to avoid conflicts with existing Worker data
     const nextVersion = Math.max((this.version ?? 1) + 1, 4000);
-    const { payload, thisHash } = await buildEncryptedPayloadGCM(
-      data,
-      { 
-        version: nextVersion, 
-        prevHash: this.lastHash,
-        passphrase: PASS_PHRASE,
-        saltB64: this.config.salt,
-        writeToken: this.config.writeToken,
-        iterations: KDF_ITERS,
-        lastDataChangeTime: this.lastDataChangeTime
-      }
-    );
-    
+const { payload, thisHash } = await buildEncryptedPayloadGCM(
+  data,
+  { 
+    version: nextVersion, 
+    prevHash: this.lastHash,
+    passphrase: PASS_PHRASE,
+    saltB64: this.config.salt,
+    writeToken: this.config.writeToken,
+    iterations: KDF_ITERS,
+    lastDataChangeTime: this.lastDataChangeTime,
+    monitorStartTime: this.monitorStartTime,
+    uploadType: uploadType,
+    sequenceNumber: this.sequenceNumber
+  }
+);
+
     // POST the encrypted payload to the Worker
     const response = await fetch(`${workerUrl}/api/update`, {
       method: 'POST',
