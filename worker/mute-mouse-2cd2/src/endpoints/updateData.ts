@@ -103,8 +103,11 @@ export class UpdateData extends OpenAPIRoute {
         issuedAt,
         prevHash,
         schemaVersion = 1,
+        monitorStartTime,
+        lastDataChangeTime,
+        uploadType,
+        sequenceNumber,
       } = body || {};
-
       if (!nonce || !ciphertext || typeof version !== "number" || !issuedAt) {
         return c.json({ error: "Invalid payload structure" }, 400);
       }
@@ -140,6 +143,10 @@ export class UpdateData extends OpenAPIRoute {
         schemaVersion,
         issuedAt,
         prevHash,
+        monitorStartTime,
+        lastDataChangeTime,
+        uploadType,
+        sequenceNumber,
         updatedAt: new Date().toISOString(),
       };
 
