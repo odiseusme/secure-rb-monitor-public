@@ -91,20 +91,19 @@ loadLastHash() {
     }
   }
   
-saveLastHash(hash, version = null) {
-    const data = {
-      hash,
-      prevDataHash: this.prevDataHash,
-      version: version || this.version,
-      sequenceNumber: this.sequenceNumber,
-      lastUploadTime: this.lastUploadTime ? new Date(this.lastUploadTime).toISOString() : null,
-      monitorStartTime: this.monitorStartTime ? new Date(this.monitorStartTime).toISOString() : null,
-      lastDataChangeTime: this.lastDataChangeTime ? new Date(this.lastDataChangeTime).toISOString() : null,
-      timestamp: new Date().toISOString()
-    };
-    fs.writeFileSync(LAST_HASH_FILE, JSON.stringify(data, null, 2));
-  }
-  
+saveLastHash(version = null) {
+  const data = {
+    prevDataHash: this.prevDataHash,
+    version: version || this.version,
+    sequenceNumber: this.sequenceNumber,
+    lastUploadTime: this.lastUploadTime ? new Date(this.lastUploadTime).toISOString() : null,
+    monitorStartTime: this.monitorStartTime ? new Date(this.monitorStartTime).toISOString() : null,
+    lastDataChangeTime: this.lastDataChangeTime ? new Date(this.lastDataChangeTime).toISOString() : null,
+    timestamp: new Date().toISOString()
+  };
+  fs.writeFileSync(LAST_HASH_FILE, JSON.stringify(data, null, 2));
+}
+
   calculateHash(data) {
     // Create a copy without the lastUpdate field to avoid false changes
     const dataForHash = { ...data };
@@ -129,7 +128,7 @@ const { payload, thisHash } = await buildEncryptedPayloadGCM(
   data,
   { 
     version: nextVersion, 
-    prevHash: this.lastHash,
+    prevHash: this.prevDataHash,
     passphrase: PASS_PHRASE,
     saltB64: this.config.salt,
     writeToken: this.config.writeToken,
@@ -158,12 +157,10 @@ const { payload, thisHash } = await buildEncryptedPayloadGCM(
       return false;
     }
 
-    // Success: store hash & bump version
-    this.saveLastHash(thisHash, nextVersion);
-    this.version = nextVersion;
-    console.log('Upload OK, version:', nextVersion, 'bytes:', payload.ciphertext.length);
-    return true;
-  }
+// Success: bump version
+this.version = nextVersion;
+console.log('Upload OK, version:', nextVersion, 'bytes:', payload.ciphertext.length);
+return true;
 
 async syncIfChanged() {
   try {
@@ -227,6 +224,7 @@ async syncIfChangedOrHeartbeat() {
         // Success: update state
         this.prevDataHash = this.dataHash;
         this.lastUploadTime = now;
+        this.saveLastHash();
         console.log(`[UPLOAD] Success - ${uploadType} upload completed`);
         return true;
       } else {
