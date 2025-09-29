@@ -320,16 +320,19 @@ async function buildEncryptedPayloadGCM(data, opts = {}) {
     iterations: opts.iterations || KDF_ITERS      // use passed iterations or fallback
   });
 
-  // 3) envelope to send to Worker
+// 3) envelope to send to Worker
   const payload = {
-    nonce: enc.nonceB64,                  // 12-byte GCM nonce (base64)
-    ciphertext: enc.ctB64,                // includes auth tag
-    version: (opts.version ?? 1),         // your monotonic version counter (if you track one)
-    issuedAt,                             // ISO timestamp
-    schemaVersion,                         // bump on schema changes
-    lastDataChangeTime: opts.lastDataChangeTime || null  // track actual data changes
+    nonce: enc.nonceB64,
+    ciphertext: enc.ctB64,
+    version: (opts.version ?? 1),
+    issuedAt,
+    schemaVersion,
+    lastDataChangeTime: opts.lastDataChangeTime || null,
+    monitorStartTime: opts.monitorStartTime || null,
+    uploadType: opts.uploadType || null,
+    sequenceNumber: opts.sequenceNumber || 0
   };
-  if (opts.prevHash) payload.prevHash = opts.prevHash;
+if (opts.prevHash) payload.prevHash = opts.prevHash;
 
   // 4) compute current hash for caller to store/compare (helps skip unchanged)
   const thisHash = sha256b64(jsonText);
