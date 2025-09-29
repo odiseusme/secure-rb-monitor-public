@@ -322,6 +322,57 @@ body {
 }
 .last-updated-top.stale { color: #EF4444; font-weight: 700; }
 
+/* ------------------------------
+   Monitor Status Line
+   ------------------------------ */
+.monitor-status-line {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px;
+    margin-bottom: 20px;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 500;
+    color: #333;
+}
+
+.status-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.status-dot.green {
+    background: #10B981;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+}
+
+.status-dot.orange {
+    background: #F59E0B;
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+}
+
+.status-dot.red {
+    background: #EF4444;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+.monitor-status-line .separator {
+    color: #94a3b8;
+    margin: 0 4px;
+}
+
+.monitor-status-line #timerA,
+.monitor-status-line #timerB {
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-weight: 600;
+    color: #1F2937;
+}
+
 /* Summary count styling for WATCHERS (numerator colored, slash/denominator dark) */
 .summary-card h3 .count-num { font-weight: 800; }         /* weight for all numerators */
 .summary-card h3 .count-div,
