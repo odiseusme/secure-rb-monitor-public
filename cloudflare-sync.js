@@ -44,10 +44,13 @@ class CloudflareSync {
     this.config = null;
     this.lastHash = null;
     this.version = 1;
-    this.lastUploadTime = 0;
-    this.lastDataChangeTime = 0;
+    this.lastUploadTime = null;    
     this.heartbeatFailed = false;
-    
+    this.monitorStartTime = null;
+    this.lastDataChangeTime = null;
+    this.sequenceNumber = 0;
+    this.dataHash = null;
+    this.prevDataHash = null;    
     this.HEARTBEAT_INTERVAL = 5 * 60 * 1000; // 5 minutes
     this.NORMAL_CHECK_INTERVAL = 30 * 1000;  // 30 seconds
     this.DEGRADED_CHECK_INTERVAL = 60 * 1000; // 60 seconds
