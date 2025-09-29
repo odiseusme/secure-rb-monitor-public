@@ -347,7 +347,7 @@ function formatDuration(milliseconds):
 - [x] Rewritten syncIfChangedOrHeartbeat() with upload type detection, sequence tracking, and timer state management
 - [x] Cleaned up hash tracking system: removed lastHash usage, now using only dataHash/prevDataHash
 - [x] Removed unused legacy variables from constructor and loadLastHash()
-
+- [x] Frontend implementation complete: timer display, formatDuration, status updates, and CSS styling
 ### Next Steps:
 1. Remove unused variables from constructor (lastHash, heartbeatFailed, DEGRADED_CHECK_INTERVAL)
 2. Clean up loadLastHash() to remove lastHash loading
@@ -364,12 +364,12 @@ function formatDuration(milliseconds):
 - [ ] Implement clock-synchronized timing (optional enhancement - current 30s interval works)
 
 ### Frontend Implementation (dashboard_html.ts):
-- [ ] Add HTML for timer display
-- [ ] Implement formatDuration function
-- [ ] Add timer update setInterval
-- [ ] Extract new payload fields
-- [ ] Implement dot color logic
-- [ ] Add CSS for status display
+- [x] Add HTML for timer display
+- [x] Implement formatDuration function
+- [x] Add timer update setInterval
+- [x] Extract new payload fields
+- [x] Implement dot color logic
+- [x] Add CSS for status display
 
 ### Testing:
 - [ ] Test normal operation
