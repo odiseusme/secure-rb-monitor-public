@@ -165,36 +165,29 @@ const { payload, thisHash } = await buildEncryptedPayloadGCM(
     return true;
   }
 
-  async syncIfChanged() {
-    try {
-      if (!fs.existsSync(STATUS_FILE)) {
-        console.log('[SYNC] Status file not found, skipping sync');
-        return false;
-      }
-
-      const statusData = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
-      const currentHash = this.calculateHash(statusData);
-
-      if (currentHash === this.lastHash) {
-        console.log('[SYNC] No changes detected, skipping upload');
-        return false;
-      }
-
-      console.log(`[SYNC] Changes detected (${this.lastHash ? this.lastHash.substring(0, 8) : 'none'}... → ${currentHash.substring(0, 8)}...)`);
-
-      const result = await this.uploadToCloudflare();
-      if (result) {
-        this.lastHash = currentHash;
-        console.log(`[SYNC] Successfully uploaded to Cloudflare (revision: ${this.version - 1})`);
-        return true;
-      }
-      return false;
-
-    } catch (err) {
-      console.error('[SYNC] Sync failed:', err.message);
+async syncIfChanged() {
+  try {
+    if (!fs.existsSync(STATUS_FILE)) {
+      console.log('[SYNC] Status file not found, skipping sync');
       return false;
     }
+
+    const statusData = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
+    this.dataHash = this.calculateHash(statusData);
+
+    // Compare with previous hash
+    if (this.dataHash === this.prevDataHash) {
+      return false; // No changes
+    }
+
+    console.log(`[SYNC] Data changed (${this.prevDataHash ? this.prevDataHash.substring(0, 8) : 'none'}... → ${this.dataHash.substring(0, 8)}...)`);
+    return true; // Data changed
+
+  } catch (err) {
+    console.error('[SYNC] Error checking for changes:', err.message);
+    return false;
   }
+}
 
 async syncIfChangedOrHeartbeat() {
   try {
