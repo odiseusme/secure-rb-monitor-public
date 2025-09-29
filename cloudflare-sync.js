@@ -189,38 +189,58 @@ async syncIfChanged() {
   }
 }
 
+
 async syncIfChangedOrHeartbeat() {
   try {
-    // Check for data changes first
-    const hasDataChanges = await this.syncIfChanged();
+    const now = Date.now();
     
-    if (hasDataChanges) {
-      this.lastUploadTime = Date.now();
-      this.lastDataChangeTime = Date.now();
-      this.heartbeatFailed = false; // Reset failure state on successful data upload
-      return true;
-    }
+    // Step 1: Check for data changes
+    const dataChanged = await this.syncIfChanged();
     
-    // Determine heartbeat interval based on failure state
-    const heartbeatInterval = this.heartbeatFailed ? 60 * 1000 : this.HEARTBEAT_INTERVAL;
-    const timeSinceLastUpload = Date.now() - this.lastUploadTime;
+    // Step 2: Determine upload type
+    let uploadType = null;
     
-    if (timeSinceLastUpload >= heartbeatInterval) {
-      console.log(`[HEARTBEAT] Sending heartbeat update (${this.heartbeatFailed ? 'retry mode' : 'normal'})`);
-      const result = await this.uploadToCloudflare();
-      if (result) {
-        this.lastUploadTime = Date.now();
-        this.heartbeatFailed = false; // Reset failure state on successful heartbeat
-        return true;
-      } else {
-        this.heartbeatFailed = true; // Mark failure for 60-second retry
-        console.log('[HEARTBEAT] Failed - switching to 60-second retry mode');
+    if (dataChanged) {
+      uploadType = "data";
+      this.lastDataChangeTime = now;
+      if (this.monitorStartTime === null) {
+        this.monitorStartTime = now;
+      }
+    } else if (this.lastUploadTime === null || (now - this.lastUploadTime) >= this.HEARTBEAT_INTERVAL) {
+      // 5+ minutes since last upload, send heartbeat
+      uploadType = "heartbeat";
+      if (this.monitorStartTime === null) {
+        this.monitorStartTime = now;
       }
     }
     
-    return false;
+    // Step 3: Execute upload if needed
+    if (uploadType !== null) {
+      console.log(`[UPLOAD] Type: ${uploadType}, Sequence: ${this.sequenceNumber + 1}`);
+      
+      // Increment sequence number BEFORE upload
+      this.sequenceNumber = this.sequenceNumber + 1;
+      
+      const result = await this.uploadToCloudflare(uploadType);
+      
+      if (result) {
+        // Success: update state
+        this.prevDataHash = this.dataHash;
+        this.lastUploadTime = now;
+        console.log(`[UPLOAD] Success - ${uploadType} upload completed`);
+        return true;
+      } else {
+        // Failed: decrement sequence number (will retry)
+        this.sequenceNumber = this.sequenceNumber - 1;
+        console.log(`[UPLOAD] Failed - will retry`);
+        return false;
+      }
+    }
+    
+    return false; // No upload needed
+    
   } catch (err) {
-    console.error('[SYNC] Sync failed:', err.message);
+    console.error('[SYNC] Error in syncIfChangedOrHeartbeat:', err.message);
     return false;
   }
 }
