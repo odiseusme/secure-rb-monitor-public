@@ -77,6 +77,15 @@ export const DASHBOARD_HTML = `
       </div>
     </div>
     <div id="content" style="display:none;">
+      <div class="monitor-status-line">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="monitorStatus">Monitor alive since:</span>
+        <span id="timerA">00:00</span>
+        <span class="separator">|</span>
+        <span>Last data update:</span>
+        <span id="timerB">00:00</span>
+        <span>ago</span>
+      </div>
       <div id="summary" class="summary"></div>
       <div id="watchers" class="watchers-grid"></div>
       <div class="last-update" id="lastUpdate"></div>
@@ -162,6 +171,10 @@ export const DASHBOARD_HTML = `
     }
 
 function showData(data) {
+  window.monitorStartTime = data.monitorStartTime ? new Date(data.monitorStartTime).getTime() : null;
+  window.lastDataChangeTime = data.lastDataChangeTime ? new Date(data.lastDataChangeTime).getTime() : null;
+  window.lastUploadReceivedTime = Date.now();
+
   const watchersArray = Object.values(data.watchers || {}).map(normalizeWatcher);
   const health = computeHealthSummary(watchersArray);
   const permit = computePermitSummary(watchersArray);
@@ -378,6 +391,34 @@ function showData(data) {
       );
     }
 
+    function formatDuration(milliseconds) {
+      if (!milliseconds || milliseconds < 0) return '00:00';
+      
+      const totalSeconds = Math.floor(milliseconds / 1000);
+      const totalMinutes = Math.floor(totalSeconds / 60);
+      const totalHours = Math.floor(totalMinutes / 60);
+      const totalDays = Math.floor(totalHours / 24);
+      
+      if (totalMinutes < 60) {
+        // Format: MM:SS
+        const mm = String(totalMinutes).padStart(2, '0');
+        const ss = String(totalSeconds % 60).padStart(2, '0');
+        return mm + ':' + ss;
+      } else if (totalHours < 24) {
+        // Format: HH:MM
+        const hh = String(totalHours).padStart(2, '0');
+        const mm = String(totalMinutes % 60).padStart(2, '0');
+        return hh + ':' + mm;
+      } else {
+        // Format: Dd HHh
+        const d = totalDays;
+        const h = totalHours % 24;
+        return d + 'd ' + h + 'h';
+      }
+    }
+
+// Enhanced login functionality
+
 // Enhanced login functionality
 document.addEventListener('DOMContentLoaded', function() {
   const passInput = document.getElementById('pass');
@@ -452,6 +493,60 @@ function setupAutoRefresh() {
     }
   }, 30000); // 30 seconds
 }
+}
+
+// Update monitor status display every second
+function updateMonitorStatus() {
+  if (!window.monitorStartTime || document.getElementById('content').style.display === 'none') {
+    return;
+  }
+  
+  const now = Date.now();
+  
+  // Calculate elapsed times
+  const uptimeMs = now - window.monitorStartTime;
+  const dataAgeMs = window.lastDataChangeTime ? (now - window.lastDataChangeTime) : 0;
+  const commHealthMs = window.lastUploadReceivedTime ? (now - window.lastUploadReceivedTime) : 999999999;
+  
+  // Update TimerA (Monitor Uptime)
+  const timerAEl = document.getElementById('timerA');
+  if (timerAEl) {
+    timerAEl.textContent = formatDuration(uptimeMs);
+  }
+  
+  // Update TimerB (Last Data Update)
+  const timerBEl = document.getElementById('timerB');
+  if (timerBEl) {
+    timerBEl.textContent = formatDuration(dataAgeMs);
+  }
+  
+  // Update dot color and monitor status
+  const statusDotEl = document.getElementById('statusDot');
+  const monitorStatusEl = document.getElementById('monitorStatus');
+  
+  let dotColor, statusText;
+  
+  if (commHealthMs < 330000) {  // 0-329 seconds (< 5.5 minutes)
+    dotColor = 'green';
+    statusText = 'Monitor alive since:';
+  } else if (commHealthMs < 630000) {  // 330-629 seconds (5.5-10.5 minutes)
+    dotColor = 'orange';
+    statusText = 'Monitor unstable';
+  } else {  // 630+ seconds (10.5+ minutes)
+    dotColor = 'red';
+    statusText = 'Monitor offline';
+  }
+  
+  if (statusDotEl) {
+    statusDotEl.className = 'status-dot ' + dotColor;
+  }
+  if (monitorStatusEl) {
+    monitorStatusEl.textContent = statusText;
+  }
+}
+
+// Start timer update interval
+setInterval(updateMonitorStatus, 1000);
   </script>
 </body>
 </html>
