@@ -336,15 +336,32 @@ function formatDuration(milliseconds):
 
 ### Completed Steps:
 - [x] Branch created: `monitor-timers-claude`
-- [ ] Specification file created
+- [x] Specification file created
+- [x] Backed up cloudflare-sync.js
+- [x] Added timer variables to constructor
+- [x] Updated loadLastHash() to load timer state
+- [x] Updated saveLastHash() to persist timer state
+- [x] Updated buildEncryptedPayloadGCM() to include new fields
+- [x] Updated uploadToCloudflare() to accept uploadType parameter and pass new timer fields
+- [x] Rewritten syncIfChanged() to use dataHash variables (detection only, no upload)
+- [x] Rewritten syncIfChangedOrHeartbeat() with upload type detection, sequence tracking, and timer state management
+- [x] Cleaned up hash tracking system: removed lastHash usage, now using only dataHash/prevDataHash
+- [x] Removed unused legacy variables from constructor and loadLastHash()
+
+### Next Steps:
+1. Remove unused variables from constructor (lastHash, heartbeatFailed, DEGRADED_CHECK_INTERVAL)
+2. Clean up loadLastHash() to remove lastHash loading
+3. Test backend changes with manual runs
+4. Start frontend implementation in worker/mute-mouse-2cd2/src/dashboard_html.ts
 
 ### Backend Implementation (cloudflare-sync.js):
-- [ ] Add new state variables
-- [ ] Implement clock-synchronized timing
-- [ ] Update hash calculation (single hash)
-- [ ] Add sequence number tracking
-- [ ] Modify payload structure
-- [ ] Update state persistence
+- [x] Add new state variables
+- [x] Update hash calculation (single hash)
+- [x] Add sequence number tracking
+- [x] Modify payload structure
+- [x] Update state persistence
+- [x] Remove unused legacy variables
+- [ ] Implement clock-synchronized timing (optional enhancement - current 30s interval works)
 
 ### Frontend Implementation (dashboard_html.ts):
 - [ ] Add HTML for timer display
