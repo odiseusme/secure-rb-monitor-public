@@ -42,10 +42,8 @@ const LAST_HASH_FILE = path.join(__dirname, '.last-sync-hash');
 class CloudflareSync {
   constructor() {
     this.config = null;
-    this.lastHash = null;
     this.version = 1;
     this.lastUploadTime = null;    
-    this.heartbeatFailed = false;
     this.monitorStartTime = null;
     this.lastDataChangeTime = null;
     this.sequenceNumber = 0;
@@ -53,7 +51,6 @@ class CloudflareSync {
     this.prevDataHash = null;    
     this.HEARTBEAT_INTERVAL = 5 * 60 * 1000; // 5 minutes
     this.NORMAL_CHECK_INTERVAL = 30 * 1000;  // 30 seconds
-    this.DEGRADED_CHECK_INTERVAL = 60 * 1000; // 60 seconds
     
     this.loadConfig();
     this.loadLastHash();
@@ -76,14 +73,12 @@ loadLastHash() {
     if (fs.existsSync(LAST_HASH_FILE)) {
       try {
         const data = JSON.parse(fs.readFileSync(LAST_HASH_FILE, 'utf8'));
-        this.lastHash = data.hash;
         this.prevDataHash = data.prevDataHash || null;
         this.version = data.version || 1;
         this.sequenceNumber = data.sequenceNumber || 0;
         this.lastUploadTime = data.lastUploadTime ? new Date(data.lastUploadTime).getTime() : null;
         this.monitorStartTime = data.monitorStartTime ? new Date(data.monitorStartTime).getTime() : null;
         this.lastDataChangeTime = data.lastDataChangeTime ? new Date(data.lastDataChangeTime).getTime() : null;
-        console.log(`[INIT] Last sync hash loaded: ${this.lastHash.substring(0, 8)}...`);
         console.log(`[INIT] Sequence number: ${this.sequenceNumber}`);
       } catch (err) {
         console.warn('[INIT] Could not load last sync hash, treating as first run');
@@ -161,6 +156,7 @@ const { payload, thisHash } = await buildEncryptedPayloadGCM(
 this.version = nextVersion;
 console.log('Upload OK, version:', nextVersion, 'bytes:', payload.ciphertext.length);
 return true;
+  }
 
 async syncIfChanged() {
   try {
