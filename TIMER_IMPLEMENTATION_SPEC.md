@@ -334,50 +334,40 @@ function formatDuration(milliseconds):
 
 ## 4. IMPLEMENTATION PROGRESS TRACKING
 
-### Completed Steps:
-- [x] Branch created: `monitor-timers-claude`
-- [x] Specification file created
-- [x] Backed up cloudflare-sync.js
-- [x] Added timer variables to constructor
-- [x] Updated loadLastHash() to load timer state
-- [x] Updated saveLastHash() to persist timer state
-- [x] Updated buildEncryptedPayloadGCM() to include new fields
-- [x] Updated uploadToCloudflare() to accept uploadType parameter and pass new timer fields
-- [x] Rewritten syncIfChanged() to use dataHash variables (detection only, no upload)
-- [x] Rewritten syncIfChangedOrHeartbeat() with upload type detection, sequence tracking, and timer state management
-- [x] Cleaned up hash tracking system: removed lastHash usage, now using only dataHash/prevDataHash
-- [x] Removed unused legacy variables from constructor and loadLastHash()
-- [x] Frontend implementation complete: timer display, formatDuration, status updates, and CSS styling
-### Next Steps:
-1. Remove unused variables from constructor (lastHash, heartbeatFailed, DEGRADED_CHECK_INTERVAL)
-2. Clean up loadLastHash() to remove lastHash loading
-3. Test backend changes with manual runs
-4. Start frontend implementation in worker/mute-mouse-2cd2/src/dashboard_html.ts
+### ✅ IMPLEMENTATION COMPLETE
 
-### Backend Implementation (cloudflare-sync.js):
-- [x] Add new state variables
-- [x] Update hash calculation (single hash)
-- [x] Add sequence number tracking
-- [x] Modify payload structure
-- [x] Update state persistence
-- [x] Remove unused legacy variables
-- [ ] Implement clock-synchronized timing (optional enhancement - current 30s interval works)
+**Backend (cloudflare-sync.js):**
+- [x] Dual timer system with monitorStartTime and lastDataChangeTime
+- [x] Sequence number tracking for upload audit
+- [x] Upload type detection (data vs heartbeat)
+- [x] New payload fields in encrypted uploads
+- [x] State persistence with all timer fields
+- [x] Removed legacy variables (lastHash, heartbeatFailed)
 
-### Frontend Implementation (dashboard_html.ts):
-- [x] Add HTML for timer display
-- [x] Implement formatDuration function
-- [x] Add timer update setInterval
-- [x] Extract new payload fields
-- [x] Implement dot color logic
-- [x] Add CSS for status display
+**Worker (updateData.ts):**
+- [x] Accept and store new timer fields
+- [x] Return timer fields in blob responses
 
-### Testing:
-- [ ] Test normal operation
-- [ ] Test data changes
-- [ ] Test heartbeat uploads
-- [ ] Test offline detection
-- [ ] Test recovery from outage
+**Frontend (dashboard_html.ts + style_css.ts):**
+- [x] Timer display UI with colored status dot
+- [x] formatDuration function (MM:SS → HH:MM → Dd HHh)
+- [x] Timer updates every second via setInterval
+- [x] Status dot colors: green/orange/red based on comm health
+- [x] CSS styling for monitor status line
+- [x] Fixed syntax errors
+- [x] Timer field extraction from payload
 
+### 🔧 Remaining Polish:
+- [ ] Auto-refresh timer extraction (in progress)
+- [ ] Improve monitor status line styling to match dashboard theme
+- [x] Optional: Implement UTC clock-synchronized timing (:02/:32 checks) ✅ COMPLETE
+
+### Testing Status:
+- [x] Backend uploads successfully with timer fields
+- [x] Worker stores and returns timer fields
+- [x] Dashboard displays live timers correctly
+- [x] Status dot changes colors appropriately
+- [ ] Auto-refresh preserves timer state
 ---
 
 ## 5. CONSTANTS REFERENCE
