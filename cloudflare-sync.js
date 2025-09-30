@@ -51,7 +51,8 @@ class CloudflareSync {
     this.prevDataHash = null;    
     this.HEARTBEAT_INTERVAL = 5 * 60 * 1000; // 5 minutes
     this.NORMAL_CHECK_INTERVAL = 30 * 1000;  // 30 seconds
-    
+    this.CHECK_TIMES = [2, 32]; // Seconds past minute for UTC-synchronized checks
+    this.checkTimeoutId = null; // For managing scheduled checks
     this.loadConfig();
     this.loadLastHash();
   }
@@ -86,6 +87,38 @@ loadLastHash() {
     }
   }
   
+  scheduleNextCheck() {
+    const now = new Date();
+    const currentSeconds = now.getUTCSeconds();
+    
+    // Find next check time (either :02 or :32)
+    let nextCheckSeconds;
+    if (currentSeconds < 2) {
+      nextCheckSeconds = 2;
+    } else if (currentSeconds < 32) {
+      nextCheckSeconds = 32;
+    } else {
+      nextCheckSeconds = 62; // Next minute's :02
+    }
+    
+    const secondsUntilNext = (nextCheckSeconds - currentSeconds + 60) % 60;
+    const msUntilNext = secondsUntilNext * 1000 - now.getUTCMilliseconds();
+    
+    // Clear any existing timeout
+    if (this.checkTimeoutId) {
+      clearTimeout(this.checkTimeoutId);
+    }
+    
+    // Schedule the next check
+    this.checkTimeoutId = setTimeout(() => {
+      this.syncIfChangedOrHeartbeat().then(() => {
+        this.scheduleNextCheck(); // Schedule the next check after this one completes
+      });
+    }, msUntilNext);
+    
+    console.log(`[SCHEDULE] Next check in ${Math.round(msUntilNext/1000)}s at :${nextCheckSeconds < 60 ? String(nextCheckSeconds).padStart(2,'0') : '02'}`);
+  }
+  
 saveLastHash(version = null) {
   const data = {
     prevDataHash: this.prevDataHash,
@@ -118,7 +151,7 @@ saveLastHash(version = null) {
 
     // Increment version BEFORE upload attempt
     // Start with a high version number to avoid conflicts with existing Worker data
-    const nextVersion = Math.max((this.version ?? 1) + 1, 4000);
+    const nextVersion = Math.max((this.version ?? 1) + 1, 4800);
 const { payload, thisHash } = await buildEncryptedPayloadGCM(
   data,
   { 
@@ -186,7 +219,12 @@ async syncIfChanged() {
 async syncIfChangedOrHeartbeat() {
   try {
     const now = Date.now();
-    
+    // Check for monitor restart after outage (630+ seconds)
+    const OFFLINE_TIMEOUT = 630000; // 10.5 minutes
+    if (this.lastUploadTime && (now - this.lastUploadTime) >= OFFLINE_TIMEOUT) {
+      console.log('[MONITOR] Detected restart after outage - resetting monitor start time');
+      this.monitorStartTime = now;
+    }
     // Step 1: Check for data changes
     const dataChanged = await this.syncIfChanged();
     
@@ -240,23 +278,16 @@ async syncIfChangedOrHeartbeat() {
 }
 
 async start() {
-  console.log('[START] CloudflareSync started with heartbeat monitoring');
+  console.log('[START] CloudflareSync started with UTC-synchronized timing');
   console.log(`[START] Monitoring: ${STATUS_FILE}`);
   console.log(`[START] Dashboard: ${this.config.dashboardUrl}`);
+  console.log(`[START] Check times: :02 and :32 seconds past each minute (UTC)`);
   
   // Initial sync
   await this.syncIfChangedOrHeartbeat();
   
-  const runLoop = async () => {
-    await this.syncIfChangedOrHeartbeat();
-    
-    // Always check for data changes every 30 seconds
-    // Heartbeat timing logic is handled inside syncIfChangedOrHeartbeat
-    setTimeout(runLoop, this.NORMAL_CHECK_INTERVAL);
-  };
-  
-  // Start the loop
-  setTimeout(runLoop, this.NORMAL_CHECK_INTERVAL);
+  // Start UTC-synchronized checking
+  this.scheduleNextCheck();
 }
 
 async syncOnce() {
