@@ -53,6 +53,11 @@ class CloudflareSync {
     this.NORMAL_CHECK_INTERVAL = 30 * 1000;  // 30 seconds
     this.CHECK_TIMES = [2, 32]; // Seconds past minute for UTC-synchronized checks
     this.checkTimeoutId = null; // For managing scheduled checks
+    // New v2 timestamp tracking
+    this.previousTimestamp = null;  // Previous lastUpdate value from status.json
+    this.currentTimestamp = null;   // Current lastUpdate value from status.json
+    this.heartbeatCounter = 0;      // Counts 30-second checks (0-9)
+    this.ALIVE_SIGNAL_INTERVAL = 10; // Send alive signal every 10 heartbeats
     this.loadConfig();
     this.loadLastHash();
   }
@@ -80,6 +85,8 @@ loadLastHash() {
         this.lastUploadTime = data.lastUploadTime ? new Date(data.lastUploadTime).getTime() : null;
         this.monitorStartTime = data.monitorStartTime ? new Date(data.monitorStartTime).getTime() : null;
         this.lastDataChangeTime = data.lastDataChangeTime ? new Date(data.lastDataChangeTime).getTime() : null;
+        this.previousTimestamp = data.previousTimestamp || null;
+        this.heartbeatCounter = data.heartbeatCounter || 0;
         console.log(`[INIT] Sequence number: ${this.sequenceNumber}`);
       } catch (err) {
         console.warn('[INIT] Could not load last sync hash, treating as first run');
@@ -111,7 +118,7 @@ loadLastHash() {
     
     // Schedule the next check
     this.checkTimeoutId = setTimeout(() => {
-      this.syncIfChangedOrHeartbeat().then(() => {
+      this.performHeartbeat().then(() => {
         this.scheduleNextCheck(); // Schedule the next check after this one completes
       });
     }, msUntilNext);
@@ -127,7 +134,9 @@ saveLastHash(version = null) {
     lastUploadTime: this.lastUploadTime ? new Date(this.lastUploadTime).toISOString() : null,
     monitorStartTime: this.monitorStartTime ? new Date(this.monitorStartTime).toISOString() : null,
     lastDataChangeTime: this.lastDataChangeTime ? new Date(this.lastDataChangeTime).toISOString() : null,
-    timestamp: new Date().toISOString()
+    previousTimestamp: this.previousTimestamp || null,
+    heartbeatCounter: this.heartbeatCounter || 0,
+    timestamp: new Date().toISOString() 
   };
   fs.writeFileSync(LAST_HASH_FILE, JSON.stringify(data, null, 2));
 }
@@ -216,41 +225,74 @@ async syncIfChanged() {
 }
 
 
-async syncIfChangedOrHeartbeat() {
+async performHeartbeat() {
   try {
-    const now = Date.now();
-    // Check for monitor restart after outage (630+ seconds)
-    const OFFLINE_TIMEOUT = 630000; // 10.5 minutes
-    if (this.lastUploadTime && (now - this.lastUploadTime) >= OFFLINE_TIMEOUT) {
-      console.log('[MONITOR] Detected restart after outage - resetting monitor start time');
-      this.monitorStartTime = now;
+    // 1. Read status.json
+    if (!fs.existsSync(STATUS_FILE)) {
+      console.log('[HB] Status file not found');
+      return false;
     }
-    // Step 1: Check for data changes
-    const dataChanged = await this.syncIfChanged();
     
-    // Step 2: Determine upload type
+    const statusData = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
+    this.currentTimestamp = statusData.lastUpdate;
+    
+    // 2. Check if timestamp changed
+    const timestampChanged = (this.currentTimestamp !== this.previousTimestamp);
+    
+    // 3. Calculate data hash (excluding lastUpdate)
+    const dataForHash = { ...statusData };
+    delete dataForHash.lastUpdate;
+    this.dataHash = this.calculateHash(dataForHash);
+    const dataChanged = (this.dataHash !== this.prevDataHash);
+    
+    // 4. Determine if upload needed
+    let shouldUpload = false;
     let uploadType = null;
     
-    if (dataChanged) {
-      uploadType = "data";
-      this.lastDataChangeTime = now;
-      if (this.monitorStartTime === null) {
-        this.monitorStartTime = now;
-      }
-    } else if (this.lastUploadTime === null || (now - this.lastUploadTime) >= this.HEARTBEAT_INTERVAL) {
-      // 5+ minutes since last upload, send heartbeat
-      uploadType = "heartbeat";
-      if (this.monitorStartTime === null) {
-        this.monitorStartTime = now;
+    if (!timestampChanged) {
+      // write_status.js is not updating - DO NOT upload anything
+      console.log('[HB] Timestamp unchanged - write_status.js appears down');
+      shouldUpload = false;
+    } else {
+      // write_status.js is alive
+      this.previousTimestamp = this.currentTimestamp;
+      this.heartbeatCounter++;
+      
+      if (dataChanged) {
+        // Data changed - upload immediately
+        uploadType = "data";
+        shouldUpload = true;
+        this.lastDataChangeTime = Date.now();
+        this.heartbeatCounter = 0; // Reset counter
+        console.log('[HB] Data changed - uploading immediately');
+      } else if (this.heartbeatCounter >= this.ALIVE_SIGNAL_INTERVAL) {
+        // Time for alive signal (every 10HB)
+        uploadType = "alive";
+        shouldUpload = true;
+        this.heartbeatCounter = 0; // Reset counter
+        console.log(`[HB] Sending alive signal after ${this.ALIVE_SIGNAL_INTERVAL} heartbeats`);
+      } else {
+        console.log(`[HB] Heartbeat ${this.heartbeatCounter}/${this.ALIVE_SIGNAL_INTERVAL} - no upload needed`);
       }
     }
     
-    // Step 3: Execute upload if needed
-    if (uploadType !== null) {
+    // 5. Handle outage recovery
+    const now = Date.now();
+    if (shouldUpload && this.lastUploadTime) {
+      const timeSinceLastUpload = now - this.lastUploadTime;
+      if (timeSinceLastUpload >= 630000) { // 630+ seconds
+        // System recovering from outage
+        this.monitorStartTime = now;
+        console.log('[RECOVERY] System back online after outage');
+      }
+    }
+    
+    // 6. Execute upload if needed
+    if (shouldUpload) {
       console.log(`[UPLOAD] Type: ${uploadType}, Sequence: ${this.sequenceNumber + 1}`);
       
       // Increment sequence number BEFORE upload
-      this.sequenceNumber = this.sequenceNumber + 1;
+      this.sequenceNumber++;
       
       const result = await this.uploadToCloudflare(uploadType);
       
@@ -262,9 +304,10 @@ async syncIfChangedOrHeartbeat() {
         console.log(`[UPLOAD] Success - ${uploadType} upload completed`);
         return true;
       } else {
-        // Failed: decrement sequence number (will retry)
-        this.sequenceNumber = this.sequenceNumber - 1;
-        console.log(`[UPLOAD] Failed - will retry`);
+        // Failed: rollback sequence number
+        this.sequenceNumber--;
+        this.heartbeatCounter = 10; // Force retry on next heartbeat
+        console.log('[UPLOAD] Failed - will retry');
         return false;
       }
     }
@@ -272,7 +315,7 @@ async syncIfChangedOrHeartbeat() {
     return false; // No upload needed
     
   } catch (err) {
-    console.error('[SYNC] Error in syncIfChangedOrHeartbeat:', err.message);
+    console.error('[HB] Error in performHeartbeat:', err.message);
     return false;
   }
 }
@@ -284,15 +327,26 @@ async start() {
   console.log(`[START] Check times: :02 and :32 seconds past each minute (UTC)`);
   
   // Initial sync
-  await this.syncIfChangedOrHeartbeat();
-  
+  await this.performHeartbeat();
+
+  // Initialize previousTimestamp from current status.json if not loaded
+  if (this.previousTimestamp === null && fs.existsSync(STATUS_FILE)) {
+    try {
+      const statusData = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
+      this.previousTimestamp = statusData.lastUpdate;
+      console.log('[START] Initialized previousTimestamp:', this.previousTimestamp);
+    } catch (err) {
+      console.log('[START] Could not initialize previousTimestamp');
+    }
+  }
+
   // Start UTC-synchronized checking
   this.scheduleNextCheck();
 }
 
 async syncOnce() {
   console.log('[ONCE] Running one-time sync...');
-  const synced = await this.syncIfChangedOrHeartbeat();
+  const synced = await this.performHeartbeat();
   if (synced) {
     console.log('[ONCE] Sync completed successfully');
   } else {
