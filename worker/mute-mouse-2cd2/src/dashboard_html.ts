@@ -453,10 +453,39 @@ function setupAutoRefresh() {
       fetch('/api/blob/' + PUBLIC_ID)
         .then(res => res.json())
         .then(j => {
-          window.monitorStartTime = j.data.monitorStartTime ? new Date(j.data.monitorStartTime).getTime() : null;
-          window.lastDataChangeTime = j.data.lastDataChangeTime ? new Date(j.data.lastDataChangeTime).getTime() : null;
-          window.lastUploadReceivedTime = Date.now();
-          return decryptData(j.data, window.currentPassphrase, window.currentSalt, window.currentIterations);
+
+      // Update timers from blob meta
+      const seq = (j.data && typeof j.data.sequenceNumber === 'number') ? j.data.sequenceNumber : null;
+      const updAt = (j.data && j.data.updatedAt) ? j.data.updatedAt : null;
+      const upType = (j.data && j.data.uploadType) ? j.data.uploadType : null;
+
+      window.monitorStartTime = j.data?.monitorStartTime ? new Date(j.data.monitorStartTime).getTime() : null;
+      // Only update "Last data update" when the upload was a real data change
+if (j.data?.uploadType === 'data' && j.data?.lastDataChangeTime) {
+  window.lastDataChangeTime = new Date(j.data.lastDataChangeTime).getTime();
+}
+
+
+      // Detect a *new* upload (data or alive) by seq/updatedAt change
+      const changed =
+        (seq !== window['lastSeq']) ||
+        (updAt !== window['lastUpdatedAt']);
+
+      if (changed) {
+        window['lastSeq'] = seq;
+        window['lastUpdatedAt'] = updAt;
+        window['lastUploadType'] = upType;
+        window.lastUploadReceivedTime = Date.now();
+      }
+
+      return decryptData(
+        j.data,
+        window.currentPassphrase,
+        window.currentSalt,
+        window.currentIterations
+      );
+
+
         })
         .then(data => showData(data))
         .catch(err => {

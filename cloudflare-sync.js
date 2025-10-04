@@ -11,6 +11,52 @@ const crypto = require('crypto');
 // Crypto helper functions (AES-CBC/GCM via WebCrypto)
 const { encryptGCM, encryptCBC, b64encode } = require('./cryptoHelpers');
 
+// ---- Timer state helpers ----
+const STATE_PATH = path.join(process.cwd(), '.cf-sync-state.json');
+
+function loadState() {
+  try {
+    return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function saveState(next) {
+  try {
+    fs.writeFileSync(STATE_PATH, JSON.stringify(next, null, 2));
+  } catch (e) {
+    console.error('[sync] Failed to write state file:', e.message);
+  }
+}
+
+function isoNow() {
+  return new Date().toISOString();
+}
+
+// ---- Timer state (persisted) ----
+let state = loadState();
+
+if (typeof state.sequenceNumber !== 'number') {
+  state.sequenceNumber = 0;
+}
+
+if (!state.monitorStartTime) {
+  state.monitorStartTime = isoNow();
+}
+
+if (!state.lastDataChangeTime) {
+  state.lastDataChangeTime = isoNow();
+}
+
+// Keep a slot for your last uploaded hash if you want to use it later
+if (!Object.prototype.hasOwnProperty.call(state, 'lastUploadedHash')) {
+  state.lastUploadedHash = null;
+}
+
+saveState(state);
+
+
 // KDF/passphrase inputs (env-configurable)
 const PASS_PHRASE = process.env.DASH_PASSPHRASE || 'TestPassphrase123!';           // TODO: set real passphrase via env
 const SALT_B64    = process.env.DASH_SALT_B64   || '1p7udJGXwrfk5IDzQUqSNw==';     // Will be overridden by config.salt
@@ -148,7 +194,14 @@ saveLastHash(version = null) {
     return crypto.createHash('sha256').update(normalizeJsonString(dataForHash)).digest('hex');
   }
 
-  async uploadToCloudflare(uploadType) {
+async uploadToCloudflare(opts = {}) {
+    const uploadType = opts.uploadType || 'data';
+    console.log('[DEBUG] meta to send:', {
+  uploadType,
+  sequenceNumber: opts.sequenceNumber,
+  monitorStartTime: opts.monitorStartTime,
+  lastDataChangeTime: opts.lastDataChangeTime
+});
     const workerUrl = process.env.BASE_URL || (this.config.baseUrl || this.config.dashboardUrl.split('/d/')[0]);
     console.log('[DEBUG] workerUrl =', workerUrl);
 
@@ -294,8 +347,16 @@ async performHeartbeat() {
       // Increment sequence number BEFORE upload
       this.sequenceNumber++;
       
-      const result = await this.uploadToCloudflare(uploadType);
-      
+      const result = await this.uploadToCloudflare({
+        uploadType,
+        sequenceNumber: this.sequenceNumber,
+        monitorStartTime: this.monitorStartTime ? new Date(this.monitorStartTime).toISOString() : null,
+        lastDataChangeTime: this.lastDataChangeTime ? new Date(this.lastDataChangeTime).toISOString() : null
+      });
+    
+
+
+
       if (result) {
         // Success: update state
         this.prevDataHash = this.dataHash;
