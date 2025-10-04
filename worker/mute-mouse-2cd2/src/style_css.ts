@@ -329,16 +329,78 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    padding: 12px;
-    margin-bottom: 20px;
-    background: rgba(255, 255, 255, 0.95);
-    border-radius: 8px;
-    font-size: 1rem;
+    gap: 12px;
+    padding: 16px 24px;
+    margin-bottom: 25px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    font-size: 1.05rem;
     font-weight: 500;
-    color: #333;
+    color: #1F2937;
+    transition: transform 0.2s ease;
 }
 
+.monitor-status-line:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+}
+
+.status-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: inline-block;
+    transition: all 0.3s ease;
+}
+
+.status-dot.green {
+    background: #10B981;
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.8);
+}
+
+.status-dot.orange {
+    background: #F59E0B;
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.8);
+}
+
+.status-dot.red {
+    background: #EF4444;
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.8);
+    animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-red {
+    0%, 100% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.8); }
+    50% { box-shadow: 0 0 20px rgba(239, 68, 68, 1); }
+}
+
+.monitor-status-line .separator {
+    color: #CBD5E1;
+    font-weight: 400;
+    margin: 0 6px;
+}
+
+.monitor-status-line #timerA,
+.monitor-status-line #timerB {
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: #10B981;
+    letter-spacing: 0.5px;
+}
+
+@media (max-width: 768px) {
+    .monitor-status-line {
+        font-size: 0.9rem;
+        padding: 12px 16px;
+        gap: 8px;
+    }
+    .monitor-status-line #timerA,
+    .monitor-status-line #timerB {
+        font-size: 0.95rem;
+    }
+}
 .status-dot {
     width: 12px;
     height: 12px;

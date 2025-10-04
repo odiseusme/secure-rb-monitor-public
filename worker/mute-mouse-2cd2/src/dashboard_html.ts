@@ -17,7 +17,6 @@ export const DASHBOARD_HTML = `
   <div class="container">
     <div class="header">
       <h1 id="pageTitle">Rosen Bridge Watchers Monitor</h1>
-      <div id="lastUpdatedTop" class="last-updated-top">Last updated: --</div>
     </div>
 
 <div id="login" class="login">
@@ -127,6 +126,11 @@ export const DASHBOARD_HTML = `
         const iterations = j.userInfo.kdfParams?.iterations || DEFAULT_KDF_ITERS;
         const data = await decryptData(j.data, pass, saltB64, iterations);
 
+        // Extract timer fields from outer payload before showing data
+        window.monitorStartTime = j.data.monitorStartTime ? new Date(j.data.monitorStartTime).getTime() : null;
+        window.lastDataChangeTime = j.data.lastDataChangeTime ? new Date(j.data.lastDataChangeTime).getTime() : null;
+        window.lastUploadReceivedTime = Date.now();
+
         // Save decryption params in memory for auto-refresh
         window.currentPassphrase = pass;
         window.currentSalt = saltB64;
@@ -171,10 +175,6 @@ export const DASHBOARD_HTML = `
     }
 
 function showData(data) {
-  window.monitorStartTime = data.monitorStartTime ? new Date(data.monitorStartTime).getTime() : null;
-  window.lastDataChangeTime = data.lastDataChangeTime ? new Date(data.lastDataChangeTime).getTime() : null;
-  window.lastUploadReceivedTime = Date.now();
-
   const watchersArray = Object.values(data.watchers || {}).map(normalizeWatcher);
   const health = computeHealthSummary(watchersArray);
   const permit = computePermitSummary(watchersArray);
@@ -190,27 +190,6 @@ function showData(data) {
 
   document.getElementById('summary').innerHTML = renderSummary(summary);
   document.getElementById('watchers').innerHTML = watchersArray.map(renderWatcher).join('');
-  // Update status display
-  if (data.lastUpdate) {
-    const dataTimestamp = new Date(data.lastUpdate);
-    const now = new Date();
-    const ageMinutes = Math.floor((now - dataTimestamp) / 60000);
-
-    let statusEmoji, statusText;
-
-    if (ageMinutes <= 5) {
-      statusEmoji = '🟢';
-      statusText = 'Monitor Online (' + ageMinutes + 'm ago)';
-    } else if (ageMinutes <= 15) {
-      statusEmoji = '🟡';
-      statusText = 'Monitor Slow (' + ageMinutes + 'm ago)';
-    } else {
-      statusEmoji = '🔴';
-      statusText = 'Monitor Unreachable (' + ageMinutes + 'm ago)';
-    }
-
-    document.getElementById('lastUpdatedTop').textContent = statusEmoji + ' ' + statusText;
-  }
 }
 
     // --- Summary helpers and normalizers ---
@@ -391,31 +370,20 @@ function showData(data) {
       );
     }
 
-    function formatDuration(milliseconds) {
-      if (!milliseconds || milliseconds < 0) return '00:00';
-      
-      const totalSeconds = Math.floor(milliseconds / 1000);
-      const totalMinutes = Math.floor(totalSeconds / 60);
-      const totalHours = Math.floor(totalMinutes / 60);
-      const totalDays = Math.floor(totalHours / 24);
-      
-      if (totalMinutes < 60) {
-        // Format: MM:SS
-        const mm = String(totalMinutes).padStart(2, '0');
-        const ss = String(totalSeconds % 60).padStart(2, '0');
-        return mm + ':' + ss;
-      } else if (totalHours < 24) {
-        // Format: HH:MM
-        const hh = String(totalHours).padStart(2, '0');
-        const mm = String(totalMinutes % 60).padStart(2, '0');
-        return hh + ':' + mm;
-      } else {
-        // Format: Dd HHh
-        const d = totalDays;
-        const h = totalHours % 24;
-        return d + 'd ' + h + 'h';
-      }
-    }
+function formatDurationHMS(milliseconds) {
+  if (!milliseconds || milliseconds < 0) return '00:00:00';
+  
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  
+  const hh = String(hours).padStart(2, '0');
+  const mm = String(minutes).padStart(2, '0');
+  const ss = String(seconds).padStart(2, '0');
+  
+  return hh + ':' + mm + ':' + ss;
+}
 
 // Enhanced login functionality
 
@@ -484,7 +452,12 @@ function setupAutoRefresh() {
     if (window.currentPassphrase && document.getElementById('content').style.display !== 'none') {
       fetch('/api/blob/' + PUBLIC_ID)
         .then(res => res.json())
-        .then(j => decryptData(j.data, window.currentPassphrase, window.currentSalt, window.currentIterations))
+        .then(j => {
+          window.monitorStartTime = j.data.monitorStartTime ? new Date(j.data.monitorStartTime).getTime() : null;
+          window.lastDataChangeTime = j.data.lastDataChangeTime ? new Date(j.data.lastDataChangeTime).getTime() : null;
+          window.lastUploadReceivedTime = Date.now();
+          return decryptData(j.data, window.currentPassphrase, window.currentSalt, window.currentIterations);
+        })
         .then(data => showData(data))
         .catch(err => {
           console.error('Auto-refresh decrypt error:', err);
@@ -492,7 +465,6 @@ function setupAutoRefresh() {
         });
     }
   }, 30000); // 30 seconds
-}
 }
 
 // Update monitor status display every second
@@ -511,13 +483,13 @@ function updateMonitorStatus() {
   // Update TimerA (Monitor Uptime)
   const timerAEl = document.getElementById('timerA');
   if (timerAEl) {
-    timerAEl.textContent = formatDuration(uptimeMs);
+    timerAEl.textContent = formatDurationHMS(uptimeMs);
   }
   
   // Update TimerB (Last Data Update)
   const timerBEl = document.getElementById('timerB');
   if (timerBEl) {
-    timerBEl.textContent = formatDuration(dataAgeMs);
+    timerBEl.textContent = formatDurationHMS(dataAgeMs);
   }
   
   // Update dot color and monitor status
