@@ -129,7 +129,6 @@ export const DASHBOARD_HTML = `
         // Extract timer fields from outer payload before showing data
         window.monitorStartTime = j.data.monitorStartTime ? new Date(j.data.monitorStartTime).getTime() : null;
         window.lastDataChangeTime = j.data.lastDataChangeTime ? new Date(j.data.lastDataChangeTime).getTime() : null;
-        window.lastUploadReceivedTime = Date.now();
 
         // Save decryption params in memory for auto-refresh
         window.currentPassphrase = pass;
@@ -444,8 +443,6 @@ document.addEventListener('DOMContentLoaded', function() {
 function setupAutoRefresh() {
   // Only run one interval
   if (window.dashboardRefreshInterval) return;
-  // Only start if password is saved (rememberPassword is checked)
-  if (localStorage.getItem('rememberPassword') !== 'true') return;
 
   window.dashboardRefreshInterval = setInterval(function() {
     // If passphrase is in memory, and dashboard is visible
@@ -465,36 +462,52 @@ if (j.data?.uploadType === 'data' && j.data?.lastDataChangeTime) {
   window.lastDataChangeTime = new Date(j.data.lastDataChangeTime).getTime();
 }
 
+// Detect a *new* upload (data or alive) by seq/updatedAt change
+const hadPrev =
+  (typeof window['lastSeq'] !== 'undefined') ||
+  (typeof window['lastUpdatedAt'] !== 'undefined');
 
-      // Detect a *new* upload (data or alive) by seq/updatedAt change
-      const changed =
-        (seq !== window['lastSeq']) ||
-        (updAt !== window['lastUpdatedAt']);
+const changed =
+  hadPrev &&
+  (seq !== window['lastSeq'] || updAt !== window['lastUpdatedAt']);
 
-      if (changed) {
-        window['lastSeq'] = seq;
-        window['lastUpdatedAt'] = updAt;
-        window['lastUploadType'] = upType;
-        window.lastUploadReceivedTime = Date.now();
-      }
+if (!hadPrev) {
+  // First load after reload: initialize without bumping timers
+  window['lastSeq'] = seq;
+  window['lastUpdatedAt'] = updAt;
+  window['lastUploadType'] = upType;
+} else if (changed) {
+  // Subsequent loads: only bump when truly new AND not stale-status
+  window['lastSeq'] = seq;
+  window['lastUpdatedAt'] = updAt;
+  window['lastUploadType'] = upType;
+  if (upType !== 'stale-status') {
+    window.lastUploadReceivedTime = Date.now();
+  }
+}
 
       return decryptData(
         j.data,
         window.currentPassphrase,
         window.currentSalt,
         window.currentIterations
-      );
-
-
-        })
-        .then(data => showData(data))
-        .catch(err => {
-          console.error('Auto-refresh decrypt error:', err);
-          // Optionally, show a warning or revert to login if continuous failures
-        });
-    }
-  }, 30000); // 30 seconds
+      )
+      .then(data => {
+        if (data && data.lastUpdate) {
+          // Save the writer's lastUpdate (as ms) so we can decide red after ~1 minute if writer stalls
+          window.lastWriterUpdateTime = new Date(data.lastUpdate).getTime();
+        }
+        return showData(data);
+      })
+      .catch(err => {
+        console.error('Auto-refresh decrypt error:', err);
+        // Optionally, show a warning or revert to login if continuous failures
+      });
+    }); // <-- closes: .then(j => { ... })
+  }
+}, 30000); // 30 seconds
 }
+
 
 // Update monitor status display every second
 function updateMonitorStatus() {
@@ -526,8 +539,12 @@ function updateMonitorStatus() {
   const monitorStatusEl = document.getElementById('monitorStatus');
   
   let dotColor, statusText;
-  
-  if (commHealthMs < 330000) {  // 0-329 seconds (< 5.5 minutes)
+
+  // If the last upload from the sync explicitly reported staleness, show RED immediately.
+  if (window['lastUploadType'] === 'stale-status') {
+    dotColor = 'red';
+    statusText = 'Monitor offline';
+  } else if (commHealthMs < 330000) {  // 0-329 seconds (< 5.5 minutes)
     dotColor = 'green';
     statusText = 'Monitor alive since:';
   } else if (commHealthMs < 630000) {  // 330-629 seconds (5.5-10.5 minutes)
@@ -537,7 +554,9 @@ function updateMonitorStatus() {
     dotColor = 'red';
     statusText = 'Monitor offline';
   }
-  
+
+
+
   if (statusDotEl) {
     statusDotEl.className = 'status-dot ' + dotColor;
   }

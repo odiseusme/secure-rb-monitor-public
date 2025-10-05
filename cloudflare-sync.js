@@ -288,9 +288,26 @@ async performHeartbeat() {
     
     const statusData = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
     this.currentTimestamp = statusData.lastUpdate;
-    
+    // --- Stale-status probe (no behavior change yet) ---
+let staleSec = 0;
+try {
+  const tsMs = new Date(this.currentTimestamp).getTime();
+  staleSec = Math.max(0, Math.floor((Date.now() - tsMs) / 1000));
+  if (staleSec >= 60) {
+    console.log(`[STALE] status.json stale for ${staleSec}s (writer stalled?)`);
+  }
+} catch (_) {
+  // ignore parse errors
+}
+
     // 2. Check if timestamp changed
     const timestampChanged = (this.currentTimestamp !== this.previousTimestamp);
+    
+    // ---- writer-stall tracking (used for stale and recovery logic) ----
+    const prevWasStale = !!this.wasWriterStale;       // remember previous tick state
+    this.wasWriterStale = (!timestampChanged && staleSec >= 60); // update current state
+    this.lastStaleReportAt = this.lastStaleReportAt || 0;     // init throttle counter
+
     
     // 3. Calculate data hash (excluding lastUpdate)
     const dataForHash = { ...statusData };
@@ -302,32 +319,48 @@ async performHeartbeat() {
     let shouldUpload = false;
     let uploadType = null;
     
-    if (!timestampChanged) {
-      // write_status.js is not updating - DO NOT upload anything
-      console.log('[HB] Timestamp unchanged - write_status.js appears down');
-      shouldUpload = false;
-    } else {
-      // write_status.js is alive
-      this.previousTimestamp = this.currentTimestamp;
-      this.heartbeatCounter++;
-      
-      if (dataChanged) {
-        // Data changed - upload immediately
-        uploadType = "data";
-        shouldUpload = true;
-        this.lastDataChangeTime = Date.now();
-        this.heartbeatCounter = 0; // Reset counter
-        console.log('[HB] Data changed - uploading immediately');
-      } else if (this.heartbeatCounter >= this.ALIVE_SIGNAL_INTERVAL) {
-        // Time for alive signal (every 10HB)
-        uploadType = "alive";
-        shouldUpload = true;
-        this.heartbeatCounter = 0; // Reset counter
-        console.log(`[HB] Sending alive signal after ${this.ALIVE_SIGNAL_INTERVAL} heartbeats`);
-      } else {
-        console.log(`[HB] Heartbeat ${this.heartbeatCounter}/${this.ALIVE_SIGNAL_INTERVAL} - no upload needed`);
-      }
-    }
+if (!timestampChanged) {
+  // Writer not updating
+  console.log('[HB] Timestamp unchanged - write_status.js appears down');
+
+  // If stale ≥60s, send a *throttled* stale-status upload (max once per 5 min)
+  const nowMs = Date.now();
+  if (staleSec >= 60 && (nowMs - this.lastStaleReportAt) >= 300000) {
+    uploadType = 'stale-status';
+    shouldUpload = true;
+    this.lastStaleReportAt = nowMs;
+    console.log(`[STALE] Reporting stale-status (stale ${staleSec}s)`);
+  } else {
+    shouldUpload = false;
+  }
+
+} else {
+  // Writer is updating again
+  this.previousTimestamp = this.currentTimestamp;
+  this.heartbeatCounter++;
+
+  // If we were stale on the previous tick and just recovered, send an *immediate* alive
+  if (prevWasStale && !dataChanged) {
+    uploadType = 'alive';
+    shouldUpload = true;
+    this.heartbeatCounter = 0;
+    console.log('[RECOVERY] Writer resumed — sending alive now');
+  } else if (dataChanged) {
+    uploadType = 'data';
+    shouldUpload = true;
+    this.lastDataChangeTime = Date.now();
+    this.heartbeatCounter = 0;
+    console.log('[HB] Data changed - uploading immediately');
+  } else if (this.heartbeatCounter >= this.ALIVE_SIGNAL_INTERVAL) {
+    uploadType = 'alive';
+    shouldUpload = true;
+    this.heartbeatCounter = 0;
+    console.log(`[HB] Sending alive signal after ${this.ALIVE_SIGNAL_INTERVAL} heartbeats`);
+  } else {
+    console.log(`[HB] Heartbeat ${this.heartbeatCounter}/${this.ALIVE_SIGNAL_INTERVAL} - no upload needed`);
+  }
+}
+
     
     // 5. Handle outage recovery
     const now = Date.now();
