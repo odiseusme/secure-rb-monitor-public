@@ -126,16 +126,15 @@ export const DASHBOARD_HTML = `
         const iterations = j.userInfo.kdfParams?.iterations || DEFAULT_KDF_ITERS;
         const data = await decryptData(j.data, pass, saltB64, iterations);
 
-        // Extract timer fields from outer payload before showing data
-        window.monitorStartTime = j.data.monitorStartTime ? new Date(j.data.monitorStartTime).getTime() : null;
-        window.lastDataChangeTime = j.data.lastDataChangeTime ? new Date(j.data.lastDataChangeTime).getTime() : null;
-        window.lastUploadReceivedTime = Date.now();
-
-        // --- PATCH: Properly initialize status fields on first load ---
+        // Initialize UI baselines from *decrypted* inner payload
+        window.monitorStartTime   = (data && data.monitorStartTime)   ? new Date(data.monitorStartTime).getTime()   : undefined;
+        window.lastDataChangeTime = (data && data.lastDataChangeTime) ? new Date(data.lastDataChangeTime).getTime() : null;
+        window.lastUploadReceivedTime = j.data.updatedAt ? Date.parse(j.data.updatedAt) : Date.now();
         window.lastUploadType = j.data.uploadType || null;
-        window.lastSeq = typeof j.data.sequenceNumber === 'number' ? j.data.sequenceNumber : null;
+        window.lastSeq = (typeof j.data.sequenceNumber === "number") ? j.data.sequenceNumber : null;
         window.lastUpdatedAt = j.data.updatedAt || null;
-        // -------------------------------------------------------------
+
+
 
         // Save decryption params in memory for auto-refresh
         window.currentPassphrase = pass;
@@ -472,14 +471,15 @@ function setupAutoRefresh() {
       const updAt = (j.data && j.data.updatedAt) ? j.data.updatedAt : null;
       const upType = (j.data && j.data.uploadType) ? j.data.uploadType : null;
 
-// Only initialize monitorStartTime from the blob if we don't already
-// have a local baseline. After recovery we control resets locally and
-// must NOT overwrite them on each auto-refresh.
-if (typeof window.monitorStartTime !== 'number' || !window.monitorStartTime) {
-  window.monitorStartTime = j.data?.monitorStartTime
-    ? new Date(j.data.monitorStartTime).getTime()
-    : null;
-}
+      // Force-set baseline from OUTER payload on every auto-refresh
+      (function(){
+        const outerMs = (j && j.data && j.data.monitorStartTime) ? Date.parse(j.data.monitorStartTime) : NaN;
+        if (!Number.isNaN(outerMs) && (upType === "alive" || upType === "data")) {
+          window.monitorStartTime = outerMs;
+        }
+      })();
+
+
 
 
 
@@ -551,7 +551,14 @@ if (!hadPrev) {
           // Save the writer's lastUpdate (as ms) so we can decide red after ~1 minute if writer stalls
           window.lastWriterUpdateTime = new Date(data.lastUpdate).getTime();
         }
-        return showData(data);
+        // Also adopt *inner* monitorStartTime on alive/data
+          if (data && (upType === "alive" || upType === "data") && data.monitorStartTime) {
+            const innerMs = Date.parse(data.monitorStartTime);
+            if (!Number.isNaN(innerMs)) {
+              window.monitorStartTime = innerMs;
+            }
+          }
+          return showData(data);
       })
       .catch(err => {
         console.error('Auto-refresh decrypt error:', err);
@@ -574,7 +581,10 @@ function updateMonitorStatus() {
 
   
   // Calculate elapsed times
-  const uptimeMs = now - window.monitorStartTime;
+  const mst = (typeof window.monitorStartTime === 'number' && Number.isFinite(window.monitorStartTime))
+    ? window.monitorStartTime
+    : null;
+  const uptimeMs = (mst !== null) ? (now - mst) : 0;
   const dataAgeMs = window.lastDataChangeTime ? (now - window.lastDataChangeTime) : 0;
   const commHealthMs = window.lastUploadReceivedTime ? (now - window.lastUploadReceivedTime) : 999999999;
   
