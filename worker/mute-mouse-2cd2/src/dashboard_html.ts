@@ -78,12 +78,12 @@ export const DASHBOARD_HTML = `
     <div id="content" style="display:none;">
       <div class="monitor-status-line">
         <span class="status-dot" id="statusDot"></span>
-        <span id="monitorStatus">Monitor alive since:</span>
-        <span id="timerA">00:00</span>
+        <span id="monitorStatus">MONITOR ALIVE SINCE:</span>
+        <span id="timerA">00:00:00</span>
         <span class="separator">|</span>
-        <span>Last data update:</span>
-        <span id="timerB">00:00</span>
-        <span>ago</span>
+        <span>LAST DATA UPDATE:</span>
+        <span id="timerB">00:00:00</span>
+        <span>AGO</span>
       </div>
       <div id="summary" class="summary"></div>
       <div id="watchers" class="watchers-grid"></div>
@@ -129,6 +129,13 @@ export const DASHBOARD_HTML = `
         // Extract timer fields from outer payload before showing data
         window.monitorStartTime = j.data.monitorStartTime ? new Date(j.data.monitorStartTime).getTime() : null;
         window.lastDataChangeTime = j.data.lastDataChangeTime ? new Date(j.data.lastDataChangeTime).getTime() : null;
+        window.lastUploadReceivedTime = Date.now();
+
+        // --- PATCH: Properly initialize status fields on first load ---
+        window.lastUploadType = j.data.uploadType || null;
+        window.lastSeq = typeof j.data.sequenceNumber === 'number' ? j.data.sequenceNumber : null;
+        window.lastUpdatedAt = j.data.updatedAt || null;
+        // -------------------------------------------------------------
 
         // Save decryption params in memory for auto-refresh
         window.currentPassphrase = pass;
@@ -381,7 +388,7 @@ function formatDurationHMS(milliseconds) {
   const mm = String(minutes).padStart(2, '0');
   const ss = String(seconds).padStart(2, '0');
   
-  return hh + ':' + mm + ':' + ss;
+  return hh + 'H ' + mm + 'M ' + ss + 'S ';
 }
 
 // Enhanced login functionality
@@ -450,13 +457,32 @@ function setupAutoRefresh() {
       fetch('/api/blob/' + PUBLIC_ID)
         .then(res => res.json())
         .then(j => {
+      window.lastUploadReceivedTime = window.lastUploadReceivedTime || Date.now();
 
+  console.log("[DEBUG] AutoRefresh: Fetched blob meta:", {
+    seq: (j.data && typeof j.data.sequenceNumber === 'number') ? j.data.sequenceNumber : null,
+    updatedAt: (j.data && j.data.updatedAt) ? j.data.updatedAt : null,
+    uploadType: (j.data && j.data.uploadType) ? j.data.uploadType : null,
+    monitorStartTime: j.data?.monitorStartTime,
+    now: new Date().toISOString()
+  }, 15000);
+  
       // Update timers from blob meta
       const seq = (j.data && typeof j.data.sequenceNumber === 'number') ? j.data.sequenceNumber : null;
       const updAt = (j.data && j.data.updatedAt) ? j.data.updatedAt : null;
       const upType = (j.data && j.data.uploadType) ? j.data.uploadType : null;
 
-      window.monitorStartTime = j.data?.monitorStartTime ? new Date(j.data.monitorStartTime).getTime() : null;
+// Only initialize monitorStartTime from the blob if we don't already
+// have a local baseline. After recovery we control resets locally and
+// must NOT overwrite them on each auto-refresh.
+if (typeof window.monitorStartTime !== 'number' || !window.monitorStartTime) {
+  window.monitorStartTime = j.data?.monitorStartTime
+    ? new Date(j.data.monitorStartTime).getTime()
+    : null;
+}
+
+
+
       // Only update "Last data update" when the upload was a real data change
 if (j.data?.uploadType === 'data' && j.data?.lastDataChangeTime) {
   window.lastDataChangeTime = new Date(j.data.lastDataChangeTime).getTime();
@@ -467,22 +493,56 @@ const hadPrev =
   (typeof window['lastSeq'] !== 'undefined') ||
   (typeof window['lastUpdatedAt'] !== 'undefined');
 
+const prevLastType = window['lastUploadType']; // capture BEFORE we update it
+
 const changed =
   hadPrev &&
   (seq !== window['lastSeq'] || updAt !== window['lastUpdatedAt']);
 
 if (!hadPrev) {
-  // First load after reload: initialize without bumping timers
+  // First load after reload: initialize state from the blob
   window['lastSeq'] = seq;
   window['lastUpdatedAt'] = updAt;
   window['lastUploadType'] = upType;
+
+  // Sync uptime baseline on any real upload using server-provided monitorStartTime
+  const msFromServer = (j && j.data && j.data.monitorStartTime) ? Date.parse(j.data.monitorStartTime) : null;
+  if ((upType === "alive" || upType === "data") && msFromServer) {
+    if (!window.monitorStartTime || Math.abs(window.monitorStartTime - msFromServer) > 1000) {
+      window.monitorStartTime = msFromServer;
+    }
+  }
+
+
+  // IMPORTANT: seed comms timer from the blob’s timestamp, not Date.now().
+  // If the backend is already stale, the dot will show it immediately.
+  // If the worker included updatedAt as an ISO string, use it; otherwise 0.
+  window.lastUploadReceivedTime = updAt ? Date.parse(updAt) : 0;
+
 } else if (changed) {
-  // Subsequent loads: only bump when truly new AND not stale-status
+  console.log("[DEBUG] AutoRefresh: Detected new uploadType:", upType, "prev:", prevLastType, "at", new Date().toISOString());
+  // Subsequent loads: only bump when truly new
   window['lastSeq'] = seq;
   window['lastUpdatedAt'] = updAt;
   window['lastUploadType'] = upType;
+
+  // Sync uptime baseline on any real upload using server-provided monitorStartTime
+  const msFromServer = (j && j.data && j.data.monitorStartTime) ? Date.parse(j.data.monitorStartTime) : null;
+  if ((upType === "alive" || upType === "data") && msFromServer) {
+    if (!window.monitorStartTime || Math.abs(window.monitorStartTime - msFromServer) > 1000) {
+      window.monitorStartTime = msFromServer;
+    }
+  }
+
+
+  // Only bump the comms timer on real uploads (not stale-status pings)
   if (upType !== 'stale-status') {
-    window.lastUploadReceivedTime = Date.now();
+    window.lastUploadReceivedTime = j.data.updatedAt ? Date.parse(j.data.updatedAt) : 0;
+  }
+
+  // Fallback only if server did not send a baseline
+  if (prevLastType === 'stale-status' && (upType === 'alive' || upType === 'data') && !(j && j.data && j.data.monitorStartTime)) {
+    window.monitorStartTime = Date.now();
   }
 }
 
@@ -502,20 +562,26 @@ if (!hadPrev) {
       .catch(err => {
         console.error('Auto-refresh decrypt error:', err);
         // Optionally, show a warning or revert to login if continuous failures
-      });
+      }, 15000);
     }); // <-- closes: .then(j => { ... })
   }
 }, 30000); // 30 seconds
 }
 
-
 // Update monitor status display every second
 function updateMonitorStatus() {
-  if (!window.monitorStartTime || document.getElementById('content').style.display === 'none') {
+  const content = document.getElementById('content');
+  if (!content || content.style.display === 'none') {
     return;
   }
-  
+
+  // If monitorStartTime missing (fresh reload), initialize it to now
+  if (!window.monitorStartTime) {
+    window.monitorStartTime = Date.now();
+  }
+
   const now = Date.now();
+
   
   // Calculate elapsed times
   const uptimeMs = now - window.monitorStartTime;
@@ -543,16 +609,16 @@ function updateMonitorStatus() {
   // If the last upload from the sync explicitly reported staleness, show RED immediately.
   if (window['lastUploadType'] === 'stale-status') {
     dotColor = 'red';
-    statusText = 'Monitor offline';
+    statusText = 'MONITOR OFFLINE SINCE:';
   } else if (commHealthMs < 330000) {  // 0-329 seconds (< 5.5 minutes)
     dotColor = 'green';
-    statusText = 'Monitor alive since:';
-  } else if (commHealthMs < 630000) {  // 330-629 seconds (5.5-10.5 minutes)
+    statusText = 'MONITOR ALIVE SINCE:';
+  } else if (commHealthMs < 360000) {  // 330-359 seconds (5.5-6 minutes)
     dotColor = 'orange';
-    statusText = 'Monitor unstable';
-  } else {  // 630+ seconds (10.5+ minutes)
+    statusText = 'MONITOR UNSTABLE';
+  } else {  // 360+ seconds (6 minutes)
     dotColor = 'red';
-    statusText = 'Monitor offline';
+    statusText = 'MONITOR OFFLINE SINCE:';
   }
 
 
@@ -563,6 +629,14 @@ function updateMonitorStatus() {
   if (monitorStatusEl) {
     monitorStatusEl.textContent = statusText;
   }
+  console.log("[DEBUG] updateMonitorStatus:", {
+    dotColor,
+    statusText,
+    monitorStartTime: window.monitorStartTime,
+    lastUploadType: window.lastUploadType,
+    commHealthMs: window.lastUploadReceivedTime ? (Date.now() - window.lastUploadReceivedTime) : 999999999,
+    now: new Date().toISOString()
+  });
 }
 
 // Start timer update interval
