@@ -464,7 +464,7 @@ function doPoll() {
     uploadType: (j.data && j.data.uploadType) ? j.data.uploadType : null,
     monitorStartTime: j.data?.monitorStartTime,
     now: new Date().toISOString()
-  }, 15000);
+  });
   
       // Update timers from blob meta
       const seq = (j.data && typeof j.data.sequenceNumber === 'number') ? j.data.sequenceNumber : null;
@@ -575,13 +575,19 @@ if (!hadPrev) {
           }
           return showData(data);
       })
-      .catch(err => {
+.catch(err => {
         console.error('Auto-refresh decrypt error:', err);
         // Optionally, show a warning or revert to login if continuous failures
-      }, 15000);
+      });
     }); // <-- closes: .then(j => { ... })
   }
-}, 30000); // 30 seconds
+}
+
+  // Call once immediately
+  doPoll();
+  
+  // Then poll every 15 seconds
+  window.dashboardRefreshInterval = setInterval(doPoll, 15000);
 }
 
 // Update monitor status display every second
@@ -655,14 +661,6 @@ function updateMonitorStatus() {
 }
 
 // Start timer update interval
-}
-
-  // run once immediately, then every 30 s
-  if (!window.dashboardRefreshInterval) {
-    doPoll();
-    window.dashboardRefreshInterval = setInterval(doPoll, 30000);
-  }
-
 setInterval(updateMonitorStatus, 1000);
   </script>
 </body>

@@ -105,6 +105,8 @@ class CloudflareSync {
     this.heartbeatCounter = 0;      // Counts 30-second checks (0-9)
     this.ALIVE_SIGNAL_INTERVAL = 10; // Send alive signal every 10 heartbeats
     this.firstRun = true;           // Send one immediate alive on process start
+    this.wasWriterStale = false;    // Track if writer is currently stale
+    this.lastStaleReportAt = 0;     // Timestamp of last stale-status upl
     this.loadConfig();
     this.loadLastHash();
   }
@@ -134,6 +136,8 @@ loadLastHash() {
         this.lastDataChangeTime = data.lastDataChangeTime ? new Date(data.lastDataChangeTime).getTime() : null;
         this.previousTimestamp = data.previousTimestamp || null;
         this.heartbeatCounter = data.heartbeatCounter || 0;
+        this.wasWriterStale = data.wasWriterStale || false;
+        this.lastStaleReportAt = data.lastStaleReportAt || 0;
         console.log(`[INIT] Sequence number: ${this.sequenceNumber}`);
       } catch (err) {
         console.warn('[INIT] Could not load last sync hash, treating as first run');
@@ -183,6 +187,8 @@ saveLastHash(version = null) {
     lastDataChangeTime: this.lastDataChangeTime ? new Date(this.lastDataChangeTime).toISOString() : null,
     previousTimestamp: this.previousTimestamp || null,
     heartbeatCounter: this.heartbeatCounter || 0,
+    wasWriterStale: this.wasWriterStale || false,
+    lastStaleReportAt: this.lastStaleReportAt || 0,
     timestamp: new Date().toISOString() 
   };
   fs.writeFileSync(LAST_HASH_FILE, JSON.stringify(data, null, 2));
