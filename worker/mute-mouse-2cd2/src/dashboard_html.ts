@@ -482,6 +482,7 @@ function setupAutoRefresh() {
         const outerMs = (j && j.data && j.data.monitorStartTime) ? Number(new Date(j.data.monitorStartTime).getTime()) : NaN;
         if (Number.isFinite(outerMs) && (upType === "alive" || upType === "data")) {
           window.monitorStartTime = outerMs;
+          updateMonitorStatus(); // immediate repaint after outer baseline
         }
       })();
 
@@ -562,6 +563,7 @@ if (!hadPrev) {
             const innerMs = Number(new Date(data.monitorStartTime).getTime());
             if (Number.isFinite(innerMs)) {
               window.monitorStartTime = innerMs;
+              updateMonitorStatus(); // immediate repaint after inner baseline
             }
           }
           return showData(data);
