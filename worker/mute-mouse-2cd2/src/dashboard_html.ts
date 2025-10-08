@@ -450,7 +450,7 @@ function setupAutoRefresh() {
   // Only run one interval
   if (window.dashboardRefreshInterval) return;
 
-  window.dashboardRefreshInterval = setInterval(function() {
+function doPoll() {
     // If passphrase is in memory, and dashboard is visible
     if (window.currentPassphrase && document.getElementById('content').style.display !== 'none') {
       fetch('/api/blob/' + PUBLIC_ID)
@@ -566,6 +566,13 @@ if (!hadPrev) {
               updateMonitorStatus(); // immediate repaint after inner baseline
             }
           }
+          // Refresh lastDataChangeTime from inner payload if newer
+          if (data && data.lastDataChangeTime) {
+            const innerChange = new Date(data.lastDataChangeTime).getTime();
+            if (!window.lastDataChangeTime || innerChange > window.lastDataChangeTime) {
+              window.lastDataChangeTime = innerChange;
+            }
+          }
           return showData(data);
       })
       .catch(err => {
@@ -648,6 +655,14 @@ function updateMonitorStatus() {
 }
 
 // Start timer update interval
+}
+
+  // run once immediately, then every 30 s
+  if (!window.dashboardRefreshInterval) {
+    doPoll();
+    window.dashboardRefreshInterval = setInterval(doPoll, 30000);
+  }
+
 setInterval(updateMonitorStatus, 1000);
   </script>
 </body>
