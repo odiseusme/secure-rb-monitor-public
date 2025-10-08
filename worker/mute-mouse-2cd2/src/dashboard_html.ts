@@ -471,10 +471,16 @@ function setupAutoRefresh() {
       const updAt = (j.data && j.data.updatedAt) ? j.data.updatedAt : null;
       const upType = (j.data && j.data.uploadType) ? j.data.uploadType : null;
 
+      // Always record comms timestamp on alive/data (even if seq/updatedAt unchanged)
+      if (upType === "alive" || upType === "data") {
+        window.lastUploadReceivedTime = j.data.updatedAt ? Date.parse(j.data.updatedAt) : Date.now();
+      }
+
+
       // Force-set baseline from OUTER payload on every auto-refresh
       (function(){
-        const outerMs = (j && j.data && j.data.monitorStartTime) ? Date.parse(j.data.monitorStartTime) : NaN;
-        if (!Number.isNaN(outerMs) && (upType === "alive" || upType === "data")) {
+        const outerMs = (j && j.data && j.data.monitorStartTime) ? Number(new Date(j.data.monitorStartTime).getTime()) : NaN;
+        if (Number.isFinite(outerMs) && (upType === "alive" || upType === "data")) {
           window.monitorStartTime = outerMs;
         }
       })();
@@ -506,7 +512,7 @@ if (!hadPrev) {
   window['lastUploadType'] = upType;
 
   // Sync uptime baseline on any real upload using server-provided monitorStartTime
-  const msFromServer = (j && j.data && j.data.monitorStartTime) ? Date.parse(j.data.monitorStartTime) : null;
+  const msFromServer = (j && j.data && j.data.monitorStartTime) ? Number(new Date(j.data.monitorStartTime).getTime()) : null;
   if ((upType === "alive" || upType === "data") && msFromServer) {
     window.monitorStartTime = msFromServer;
   }
@@ -525,7 +531,7 @@ if (!hadPrev) {
   window['lastUploadType'] = upType;
 
   // Sync uptime baseline on any real upload using server-provided monitorStartTime
-  const msFromServer = (j && j.data && j.data.monitorStartTime) ? Date.parse(j.data.monitorStartTime) : null;
+  const msFromServer = (j && j.data && j.data.monitorStartTime) ? Number(new Date(j.data.monitorStartTime).getTime()) : null;
   if ((upType === "alive" || upType === "data") && msFromServer) { window.monitorStartTime = msFromServer; }
 
 
@@ -553,8 +559,8 @@ if (!hadPrev) {
         }
         // Also adopt *inner* monitorStartTime on alive/data
           if (data && (upType === "alive" || upType === "data") && data.monitorStartTime) {
-            const innerMs = Date.parse(data.monitorStartTime);
-            if (!Number.isNaN(innerMs)) {
+            const innerMs = Number(new Date(data.monitorStartTime).getTime());
+            if (Number.isFinite(innerMs)) {
               window.monitorStartTime = innerMs;
             }
           }
