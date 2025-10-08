@@ -508,9 +508,7 @@ if (!hadPrev) {
   // Sync uptime baseline on any real upload using server-provided monitorStartTime
   const msFromServer = (j && j.data && j.data.monitorStartTime) ? Date.parse(j.data.monitorStartTime) : null;
   if ((upType === "alive" || upType === "data") && msFromServer) {
-    if (!window.monitorStartTime || Math.abs(window.monitorStartTime - msFromServer) > 1000) {
-      window.monitorStartTime = msFromServer;
-    }
+    window.monitorStartTime = msFromServer;
   }
 
 
@@ -528,11 +526,7 @@ if (!hadPrev) {
 
   // Sync uptime baseline on any real upload using server-provided monitorStartTime
   const msFromServer = (j && j.data && j.data.monitorStartTime) ? Date.parse(j.data.monitorStartTime) : null;
-  if ((upType === "alive" || upType === "data") && msFromServer) {
-    if (!window.monitorStartTime || Math.abs(window.monitorStartTime - msFromServer) > 1000) {
-      window.monitorStartTime = msFromServer;
-    }
-  }
+  if ((upType === "alive" || upType === "data") && msFromServer) { window.monitorStartTime = msFromServer; }
 
 
   // Only bump the comms timer on real uploads (not stale-status pings)
@@ -575,10 +569,6 @@ function updateMonitorStatus() {
     return;
   }
 
-  // If monitorStartTime missing (fresh reload), initialize it to now
-  if (!window.monitorStartTime) {
-    window.monitorStartTime = Date.now();
-  }
 
   const now = Date.now();
 
