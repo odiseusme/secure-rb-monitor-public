@@ -104,6 +104,7 @@ class CloudflareSync {
     this.currentTimestamp = null;   // Current lastUpdate value from status.json
     this.heartbeatCounter = 0;      // Counts 30-second checks (0-9)
     this.ALIVE_SIGNAL_INTERVAL = 10; // Send alive signal every 10 heartbeats
+    this.firstRun = true;           // Send one immediate alive on process start
     this.loadConfig();
     this.loadLastHash();
   }
@@ -293,7 +294,7 @@ let staleSec = 0;
 try {
   const tsMs = new Date(this.currentTimestamp).getTime();
   staleSec = Math.max(0, Math.floor((Date.now() - tsMs) / 1000));
-  if (staleSec >= 60) {
+  if (staleSec >= 30) {
     console.log(`[STALE] status.json stale for ${staleSec}s (writer stalled?)`);
   }
 } catch (_) {
@@ -325,7 +326,7 @@ if (!timestampChanged) {
 
   // If stale ≥60s, send a *throttled* stale-status upload (max once per 5 min)
   const nowMs = Date.now();
-  if (staleSec >= 60 && (nowMs - this.lastStaleReportAt) >= 300000) {
+  if (staleSec >= 60 && (nowMs - this.lastStaleReportAt) >= 90000) {
     uploadType = 'stale-status';
     shouldUpload = true;
     this.lastStaleReportAt = nowMs;
@@ -340,16 +341,20 @@ if (!timestampChanged) {
   this.heartbeatCounter++;
 
   // If we were stale on the previous tick and just recovered, send an *immediate* alive
-  if (prevWasStale && !dataChanged) {
+  if ((prevWasStale || this.firstRun) && !dataChanged) {
     uploadType = 'alive';
     shouldUpload = true;
     this.heartbeatCounter = 0;
+    
+    this.firstRun = false;
     console.log('[RECOVERY] Writer resumed — sending alive now');
   } else if (dataChanged) {
     uploadType = 'data';
     shouldUpload = true;
     this.lastDataChangeTime = Date.now();
     this.heartbeatCounter = 0;
+    
+    this.firstRun = false;
     console.log('[HB] Data changed - uploading immediately');
   } else if (this.heartbeatCounter >= this.ALIVE_SIGNAL_INTERVAL) {
     uploadType = 'alive';
@@ -361,15 +366,37 @@ if (!timestampChanged) {
   }
 }
 
-    
     // 5. Handle outage recovery
     const now = Date.now();
     if (shouldUpload && this.lastUploadTime) {
       const timeSinceLastUpload = now - this.lastUploadTime;
-      if (timeSinceLastUpload >= 630000) { // 630+ seconds
+      if (timeSinceLastUpload >= 360000) { // 360+ seconds (6 minutes)
         // System recovering from outage
         this.monitorStartTime = now;
         console.log('[RECOVERY] System back online after outage');
+        console.log('[DEBUG] monitorStartTime just reset to:', this.monitorStartTime, new Date(this.monitorStartTime).toISOString());
+        // FORCE immediate upload when recovering
+        this.sequenceNumber++; // increment before upload, same as in main upload logic
+        const result = await this.uploadToCloudflare({
+          uploadType: 'alive',
+          sequenceNumber: this.sequenceNumber,
+          monitorStartTime: this.monitorStartTime ? new Date(this.monitorStartTime).toISOString() : null,
+          lastDataChangeTime: this.lastDataChangeTime ? new Date(this.lastDataChangeTime).toISOString() : null
+        });
+        if (result) {
+          // Success: update state
+          this.prevDataHash = this.dataHash;
+          this.lastUploadTime = now;
+          this.saveLastHash();
+          console.log(`[UPLOAD] Success - alive upload completed`);
+        } else {
+          // Failed: rollback sequence number
+          this.sequenceNumber--;
+          this.heartbeatCounter = 10; // Force retry on next heartbeat
+          console.log('[UPLOAD] Failed - will retry');
+        }
+        this.heartbeatCounter = 0; // reset heartbeat if you use one
+        return; // skip the rest of the loop since we've already uploaded
       }
     }
     
