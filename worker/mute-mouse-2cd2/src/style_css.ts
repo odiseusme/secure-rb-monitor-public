@@ -430,6 +430,48 @@ body {
     color: #1F2937;
 }
 
+.monitor-status-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 25px;
+}
+
+.monitor-status-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: #1F2937;
+  min-width: 0;
+  transition: transform 0.2s ease;
+}
+
+.monitor-status-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+}
+
+@media (max-width: 768px) {
+  .monitor-status-group {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .monitor-status-card {
+    font-size: 0.95rem;
+    padding: 14px 12px;
+  }
+}
+
+.monitor-status-card .status-dot {
+  margin-right: 10px;
+}
+
 /* Summary count styling for WATCHERS (numerator colored, slash/denominator dark) */
 .summary-card h3 .count-num { font-weight: 800; }         /* weight for all numerators */
 .summary-card h3 .count-div,

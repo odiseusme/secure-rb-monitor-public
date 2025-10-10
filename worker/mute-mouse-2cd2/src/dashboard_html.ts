@@ -76,15 +76,18 @@ export const DASHBOARD_HTML = `
       </div>
     </div>
     <div id="content" style="display:none;">
-      <div class="monitor-status-line">
+    <div class="monitor-status-group">
+      <div class="monitor-status-card" id="uptimeBox">
         <span class="status-dot" id="statusDot"></span>
         <span id="monitorStatus">MONITOR ALIVE SINCE:</span>
         <span id="timerA">00:00:00</span>
-        <span class="separator">|</span>
-        <span>LAST DATA UPDATE:</span>
+      </div>
+      <div class="monitor-status-card" id="dataUpdateBox">
+        <span class="data-update-label">LAST DATA UPDATE:</span>
         <span id="timerB">00:00:00</span>
         <span>AGO</span>
       </div>
+    </div>
       <div id="summary" class="summary"></div>
       <div id="watchers" class="watchers-grid"></div>
       <div class="last-update" id="lastUpdate"></div>
@@ -630,7 +633,7 @@ function updateMonitorStatus() {
   // If the last upload from the sync explicitly reported staleness, show RED immediately.
   if (window['lastUploadType'] === 'stale-status') {
     dotColor = 'red';
-    statusText = 'MONITOR OFFLINE SINCE:';
+    statusText = 'MONITOR DOWN SINCE:';
   } else if (commHealthMs < 330000) {  // 0-329 seconds (< 5.5 minutes)
     dotColor = 'green';
     statusText = 'MONITOR ALIVE SINCE:';
@@ -639,7 +642,7 @@ function updateMonitorStatus() {
     statusText = 'MONITOR UNSTABLE';
   } else {  // 360+ seconds (6 minutes)
     dotColor = 'red';
-    statusText = 'MONITOR OFFLINE SINCE:';
+    statusText = 'MONITOR DOWN SINCE:';
   }
 
   if (statusDotEl) {
