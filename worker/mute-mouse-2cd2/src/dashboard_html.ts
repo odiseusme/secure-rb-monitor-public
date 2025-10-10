@@ -112,6 +112,19 @@ export const DASHBOARD_HTML = `
       }
     }
 
+// Util function to persist lastDataChangeTime
+function persistLastDataChangeTime(ms) {
+  if (typeof ms === 'number' && ms > 0) {
+    localStorage.setItem('lastDataChangeTime', String(ms));
+  }
+}
+// Util function to get persisted lastDataChangeTime
+function getPersistedLastDataChangeTime() {
+  const val = localStorage.getItem('lastDataChangeTime');
+  const num = val ? Number(val) : null;
+  return (typeof num === 'number' && num > 0) ? num : null;
+}
+
     // Step 1: Login, decryption
     async function decrypt(passphraseOverride) {
       const passInput = document.getElementById('pass');
@@ -131,7 +144,15 @@ export const DASHBOARD_HTML = `
 
         // Initialize UI baselines from *decrypted* inner payload
         window.monitorStartTime   = (data && data.monitorStartTime)   ? new Date(data.monitorStartTime).getTime()   : undefined;
-        window.lastDataChangeTime = (data && data.lastDataChangeTime) ? new Date(data.lastDataChangeTime).getTime() : null;
+        // PATCH: Use backend if present, else localStorage fallback for lastDataChangeTime
+        if (data && data.lastDataChangeTime) {
+          window.lastDataChangeTime = new Date(data.lastDataChangeTime).getTime();
+          persistLastDataChangeTime(window.lastDataChangeTime);
+        } else {
+          // fallback to persisted value (if any)
+          const persisted = getPersistedLastDataChangeTime();
+          window.lastDataChangeTime = persisted;
+        }
         window.lastUploadReceivedTime = j.data.updatedAt ? Date.parse(j.data.updatedAt) : Date.now();
         window.lastUploadType = j.data.uploadType || null;
         window.lastSeq = (typeof j.data.sequenceNumber === "number") ? j.data.sequenceNumber : null;
@@ -152,7 +173,10 @@ export const DASHBOARD_HTML = `
 
         // Start auto-refresh if password is saved
         setupAutoRefresh();
-      } catch(e) {
+    }  catch(e) {
+        // PATCH: On decrypt failure, restore lastDataChangeTime from storage for ticking timer
+        const persisted = getPersistedLastDataChangeTime();
+        if (persisted) window.lastDataChangeTime = persisted;
         document.getElementById('error').textContent = 'Invalid passphrase or decryption failed';
         console.error('Decrypt error:', e);
       }
@@ -486,11 +510,18 @@ function setupAutoRefresh() {
             }
           })();
 
-          // Only update "Last data update" when the upload was a real data change
+          // PATCH: Only update lastDataChangeTime and persist if uploadType === 'data'
           if (j.data?.uploadType === 'data' && j.data?.lastDataChangeTime) {
             window.lastDataChangeTime = new Date(j.data.lastDataChangeTime).getTime();
+            persistLastDataChangeTime(window.lastDataChangeTime);
           }
-
+          
+          // In case data.lastDataChangeTime is missing, fallback to persisted
+          if (!window.lastDataChangeTime) {
+            const persisted = getPersistedLastDataChangeTime();
+            window.lastDataChangeTime = persisted;
+          }
+          
           // Detect a *new* upload (data or alive) by seq/updatedAt change
           const hadPrev =
             (typeof window['lastSeq'] !== 'undefined') ||
@@ -567,24 +598,37 @@ function setupAutoRefresh() {
               }
             }
 
-              // Refresh lastDataChangeTime from inner payload if newer
-              if (data && data.lastDataChangeTime) {
-                const innerChange = new Date(data.lastDataChangeTime).getTime();
-                if (!window.lastDataChangeTime || innerChange > window.lastDataChangeTime) {
-                  window.lastDataChangeTime = innerChange;
-                }
+            // Refresh lastDataChangeTime from inner payload if newer, and persist
+            if (data && data.lastDataChangeTime) {
+              const innerChange = new Date(data.lastDataChangeTime).getTime();
+              if (!window.lastDataChangeTime || innerChange > window.lastDataChangeTime) {
+                window.lastDataChangeTime = innerChange;
+                persistLastDataChangeTime(window.lastDataChangeTime);
               }
-              return showData(data);
+            } else {
+              // fallback to persisted value if missing
+              const persisted = getPersistedLastDataChangeTime();
+              window.lastDataChangeTime = persisted;
+            }
+            return showData(data);
             })
             .catch(err => {
-              console.error('Auto-refresh decrypt error:', err);
+              // PATCH: On decrypt failure, use persisted value for ticking timer
+              const persisted = getPersistedLastDataChangeTime();
+              if (persisted) window.lastDataChangeTime = persisted;
               // Optionally, show a warning or revert to login if continuous failures
+              console.error('Auto-refresh decrypt error:', err);
             });
           }
         })
-        .catch(err => {
-          console.error('Auto-refresh fetch error:', err);
-        });
+    .catch(err => {
+      // PATCH: On fetch failure, use persisted value for ticking timer
+      const persisted = getPersistedLastDataChangeTime();
+      if (persisted) window.lastDataChangeTime = persisted;
+      document.getElementById('staleness').textContent = 'Warning: Unable to reach backend, timers may be stale!';
+      console.error('Auto-refresh fetch error:', err);
+    });
+
     }
   }
 
