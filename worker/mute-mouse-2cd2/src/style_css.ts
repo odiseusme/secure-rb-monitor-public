@@ -356,18 +356,16 @@ body {
 
 .status-dot.green {
     background: #10B981;
-    box-shadow: 0 0 12px rgba(16, 185, 129, 0.8);
 }
 
 .status-dot.orange {
     background: #F59E0B;
-    box-shadow: 0 0 12px rgba(245, 158, 11, 0.8);
 }
 
 .status-dot.red {
     background: #EF4444;
-    box-shadow: 0 0 12px rgba(239, 68, 68, 0.8);
-    animation: pulse-red 2s infinite;
+/*    box-shadow: 0 0 12px rgba(239, 68, 68, 0.8);*/
+/*    animation: pulse-red 2s infinite;*/
 }
 
 @keyframes pulse-red {
@@ -410,17 +408,14 @@ body {
 
 .status-dot.green {
     background: #10B981;
-    box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
 }
 
 .status-dot.orange {
     background: #F59E0B;
-    box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
 }
 
 .status-dot.red {
     background: #EF4444;
-    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
 }
 
 .monitor-status-line .separator {
