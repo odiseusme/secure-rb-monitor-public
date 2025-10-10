@@ -260,6 +260,235 @@ curl -X POST http://localhost:38472/api/admin/create-invite \
 - **Dashboard Serving**: HTML generation and client-side decryption ready
 - **Admin Functions**: Stats, user management, invite creation
 
+### 6. Dual Timer System (`cloudflare-sync.js` + Dashboard)
+
+**Purpose**: Monitor system health and data freshness through two independent timers with visual status indicators.
+
+**Architecture**: Backend heartbeat system synchronized with frontend display timers.
+
+#### Backend Logic (cloudflare-sync.js)
+
+**Timing Architecture**:
+- **Heartbeat Interval**: 30 seconds (one heartbeat = 1HB)
+- **Clock Synchronization**: Checks occur at UTC :02 and :32 seconds
+- **Alive Signal**: Sent every 10 heartbeats (5 minutes) IF data source is active
+- **Data Change Detection**: Immediate upload when actual data changes
+
+**State Variables**:
+```javascript
+previousTimestamp = null      // Previous status.json lastUpdate value
+currentTimestamp = null       // Current status.json lastUpdate value  
+heartbeatCounter = 0          // Counts checks (0-9, resets after alive signal)
+dataHash = null               // Hash of status.json (excluding timestamp)
+prevDataHash = null           // Previous hash for change detection
+monitorStartTime = null       // When system recovered from outage (>10.5 min)
+lastDataChangeTime = null     // When actual data (not just timestamp) changed
+lastUploadTime = null         // When last alive signal was sent
+sequenceNumber = 0            // Monotonic upload counter (never resets)
+
+Upload Decision Logic:
+javascript
+
+Every 30 seconds:
+  1. Read status.json and extract timestamp
+  2. Compare with previousTimestamp
+  
+  IF timestamp UNCHANGED:
+     // write_status.js is down - DO NOT upload
+     // Dashboard will naturally show orange → red
+     
+  IF timestamp CHANGED:
+     previousTimestamp = currentTimestamp
+     heartbeatCounter++
+     
+     Calculate dataHash (excluding timestamp field)
+     
+     IF dataHash ≠ prevDataHash:
+        // Actual data changed - upload immediately
+        uploadType = "data"
+        lastDataChangeTime = NOW()
+        heartbeatCounter = 0  // Reset counter
+        
+     ELSE IF heartbeatCounter >= 10:
+        // Time for periodic alive signal
+        uploadType = "alive"
+        heartbeatCounter = 0  // Reset counter
+
+Outage Recovery:
+javascript
+
+IF (NOW() - lastUploadTime) >= 360000:  // 6+ minutes
+   // System recovering from outage
+   monitorStartTime = NOW()  // Reset Timer A on dashboard
+
+Upload Payload:
+javascript
+
+{
+  nonce: "...",                                    // Encryption nonce
+  ciphertext: "...",                               // Encrypted status data
+  version: 4001,                                   // Increments with each upload
+  issuedAt: "2025-10-10T10:30:00.000Z",           // Upload timestamp
+  schemaVersion: 1,                                // Payload format version
+  
+  // Timer metadata
+  monitorStartTime: "2025-10-10T08:00:00.000Z",   // System uptime anchor
+  lastDataChangeTime: "2025-10-10T10:15:23.000Z", // Last data change
+  uploadType: "alive" | "data",                   // Upload reason
+  sequenceNumber: 1042                             // Monotonic counter
+}
+
+Frontend Display (dashboard_html.ts)
+
+Timer Display Structure:
+html
+
+<div class="monitor-status-line">
+  <span class="status-dot" id="statusDot"></span>
+  <span id="monitorStatus">Monitor alive since:</span>
+  <span id="timerA">00:00:00</span>
+  <span class="separator">|</span>
+  <span>Last data update:</span>
+  <span id="timerB">00:00:00</span>
+  <span>ago</span>
+</div>
+
+Timer Definitions:
+
+Timer A (System Uptime):
+
+    Shows: HH:MM:SS since last major outage recovery
+    Calculation: NOW() - monitorStartTime
+    Resets: When system recovers from 6+ minute silence
+    Format: Always HH:MM:SS (e.g., 03:24:15)
+
+Timer B (Data Freshness):
+
+    Shows: HH:MM:SS since last data change
+    Calculation: NOW() - lastDataChangeTime
+    Resets: When actual watcher data changes (not just timestamp)
+    Format: Always HH:MM:SS (e.g., 00:08:42)
+
+Status Dot Colors:
+javascript
+
+const silenceMs = NOW() - lastUploadReceivedTime
+
+IF silenceMs < 330000:       // 0-5.5 minutes
+   dotColor = "green"
+   statusText = "Monitor alive since:"
+   
+ELSE IF silenceMs < 360000:  // 5.5-6 minutes  
+   dotColor = "orange"
+   statusText = "Monitor unstable"
+   
+ELSE:                         // 6+ minutes
+   dotColor = "red"
+   statusText = "Monitor offline"
+
+Update Loop:
+javascript
+
+setInterval(() => {
+  const now = Date.now()
+  
+  // Update Timer A (System uptime)
+  const uptimeMs = now - monitorStartTime
+  document.getElementById('timerA').textContent = formatHMS(uptimeMs)
+  
+  // Update Timer B (Data freshness)
+  const dataAgeMs = now - lastDataChangeTime
+  document.getElementById('timerB').textContent = formatHMS(dataAgeMs)
+  
+  // Update status dot color based on communication health
+  updateStatusDot()
+  
+}, 1000)  // Updates every second
+
+Timer Formatting:
+javascript
+
+function formatHMS(milliseconds) {
+  const totalSeconds = Math.floor(milliseconds / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  
+  return `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`
+}
+
+System Behavior Scenarios
+
+Scenario 1: Normal Operation
+
+write_status.js updates every 30s
+→ cloudflare-sync detects timestamp change
+→ Every 5 minutes: alive signal uploaded
+→ Dashboard: Green dot, timers running normally
+
+Scenario 2: Data Source Down
+
+write_status.js stops
+→ cloudflare-sync sees unchanged timestamp
+→ NO uploads sent (by design)
+→ Dashboard: After 5.5 min → orange, after 6 min → red
+→ Timers continue incrementing (showing staleness)
+
+Scenario 3: Data Change
+
+Watcher data actually changes (not just timestamp)
+→ cloudflare-sync detects hash difference
+→ Immediate "data" upload (resets heartbeat counter)
+→ Timer B resets to 00:00:00
+→ Dashboard: Refreshes with new data
+
+Scenario 4: Recovery from Outage
+
+System down for 6 minutes
+→ write_status.js resumes
+→ cloudflare-sync detects timestamp change after 10.5+ min silence
+→ Sets monitorStartTime = NOW()
+→ Immediate upload
+→ Dashboard: Timer A resets to 00:00:00, dot returns to green
+
+Key Design Principles
+
+    Timestamp-Driven: Only upload when data source is actively updating
+    Natural Failure Indication: No uploads → status dot naturally degrades
+    Immediate Data Updates: Changes trigger instant uploads (don't wait for heartbeat)
+    Visual Health Feedback: Three-color dot system provides instant status
+    Persistent Monitoring: Timers show history even during communication gaps
+
+Persistent State
+
+Saved to .cf-sync-state.json:
+json
+
+{
+  "prevDataHash": "a1b2c3d4...",
+  "previousTimestamp": "2025-10-10T10:30:00.000Z",
+  "heartbeatCounter": 3,
+  "version": 4015,
+  "sequenceNumber": 1042,
+  "lastUploadTime": "2025-10-10T10:30:02.000Z",
+  "monitorStartTime": "2025-10-10T08:00:02.000Z",
+  "lastDataChangeTime": "2025-10-10T10:15:32.000Z",
+  "timestamp": "2025-10-10T10:30:02.000Z"
+}
+
+Constants Reference
+javascript
+
+// Timing
+CHECK_INTERVAL = 30000           // 30 seconds between heartbeats
+ALIVE_SIGNAL_INTERVAL = 10       // Every 10 heartbeats = 5 minutes
+UNSTABLE_TIMEOUT = 330000        // 5.5 minutes (just over 1 alive signal)
+OFFLINE_TIMEOUT = 360000         // 6 minutes (just over 2 alive signals)
+
+// UTC Synchronization
+CHECK_TIMES = [2, 32]            // Seconds past minute for checks
+
+
 ## CRITICAL FIXES REQUIRED
 
 ### Priority 1: Fix KDF Algorithm Mismatch 
@@ -512,4 +741,8 @@ To complete this documentation, I need:
    - Expected data format for watchers
    - Error scenarios and handling
 
-Would you like me to investigate any specific area first?
+markdown
+
+
+
+

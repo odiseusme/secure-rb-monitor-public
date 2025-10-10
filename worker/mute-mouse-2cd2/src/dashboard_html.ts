@@ -134,8 +134,6 @@ export const DASHBOARD_HTML = `
         window.lastSeq = (typeof j.data.sequenceNumber === "number") ? j.data.sequenceNumber : null;
         window.lastUpdatedAt = j.data.updatedAt || null;
 
-
-
         // Save decryption params in memory for auto-refresh
         window.currentPassphrase = pass;
         window.currentSalt = saltB64;
@@ -450,142 +448,146 @@ function setupAutoRefresh() {
   // Only run one interval
   if (window.dashboardRefreshInterval) return;
 
-function doPoll() {
+  function doPoll() {
     // If passphrase is in memory, and dashboard is visible
     if (window.currentPassphrase && document.getElementById('content').style.display !== 'none') {
       fetch('/api/blob/' + PUBLIC_ID)
         .then(res => res.json())
         .then(j => {
-      window.lastUploadReceivedTime = window.lastUploadReceivedTime || Date.now();
+          window.lastUploadReceivedTime = window.lastUploadReceivedTime || Date.now();
 
-  console.log("[DEBUG] AutoRefresh: Fetched blob meta:", {
-    seq: (j.data && typeof j.data.sequenceNumber === 'number') ? j.data.sequenceNumber : null,
-    updatedAt: (j.data && j.data.updatedAt) ? j.data.updatedAt : null,
-    uploadType: (j.data && j.data.uploadType) ? j.data.uploadType : null,
-    monitorStartTime: j.data?.monitorStartTime,
-    now: new Date().toISOString()
-  });
-  
-      // Update timers from blob meta
-      const seq = (j.data && typeof j.data.sequenceNumber === 'number') ? j.data.sequenceNumber : null;
-      const updAt = (j.data && j.data.updatedAt) ? j.data.updatedAt : null;
-      const upType = (j.data && j.data.uploadType) ? j.data.uploadType : null;
+          console.log("[DEBUG] AutoRefresh: Fetched blob meta:", {
+            seq: (j.data && typeof j.data.sequenceNumber === 'number') ? j.data.sequenceNumber : null,
+            updatedAt: (j.data && j.data.updatedAt) ? j.data.updatedAt : null,
+            uploadType: (j.data && j.data.uploadType) ? j.data.uploadType : null,
+            monitorStartTime: j.data?.monitorStartTime,
+            now: new Date().toISOString()
+          });
 
-      // Always record comms timestamp on alive/data (even if seq/updatedAt unchanged)
-      if (upType === "alive" || upType === "data") {
-        window.lastUploadReceivedTime = j.data.updatedAt ? Date.parse(j.data.updatedAt) : Date.now();
-      }
+          // Update timers from blob meta
+          const seq = (j.data && typeof j.data.sequenceNumber === 'number') ? j.data.sequenceNumber : null;
+          const updAt = (j.data && j.data.updatedAt) ? j.data.updatedAt : null;
+          const upType = (j.data && j.data.uploadType) ? j.data.uploadType : null;
 
-
-      // Force-set baseline from OUTER payload on every auto-refresh
-      (function(){
-        const outerMs = (j && j.data && j.data.monitorStartTime) ? Number(new Date(j.data.monitorStartTime).getTime()) : NaN;
-        if (Number.isFinite(outerMs) && (upType === "alive" || upType === "data")) {
-          window.monitorStartTime = outerMs;
-          updateMonitorStatus(); // immediate repaint after outer baseline
-        }
-      })();
-
-
-
-
-
-      // Only update "Last data update" when the upload was a real data change
-if (j.data?.uploadType === 'data' && j.data?.lastDataChangeTime) {
-  window.lastDataChangeTime = new Date(j.data.lastDataChangeTime).getTime();
-}
-
-// Detect a *new* upload (data or alive) by seq/updatedAt change
-const hadPrev =
-  (typeof window['lastSeq'] !== 'undefined') ||
-  (typeof window['lastUpdatedAt'] !== 'undefined');
-
-const prevLastType = window['lastUploadType']; // capture BEFORE we update it
-
-const changed =
-  hadPrev &&
-  (seq !== window['lastSeq'] || updAt !== window['lastUpdatedAt']);
-
-if (!hadPrev) {
-  // First load after reload: initialize state from the blob
-  window['lastSeq'] = seq;
-  window['lastUpdatedAt'] = updAt;
-  window['lastUploadType'] = upType;
-
-  // Sync uptime baseline on any real upload using server-provided monitorStartTime
-  const msFromServer = (j && j.data && j.data.monitorStartTime) ? Number(new Date(j.data.monitorStartTime).getTime()) : null;
-  if ((upType === "alive" || upType === "data") && msFromServer) {
-    window.monitorStartTime = msFromServer;
-  }
-
-
-  // IMPORTANT: seed comms timer from the blob’s timestamp, not Date.now().
-  // If the backend is already stale, the dot will show it immediately.
-  // If the worker included updatedAt as an ISO string, use it; otherwise 0.
-  window.lastUploadReceivedTime = updAt ? Date.parse(updAt) : 0;
-
-} else if (changed) {
-  console.log("[DEBUG] AutoRefresh: Detected new uploadType:", upType, "prev:", prevLastType, "at", new Date().toISOString());
-  // Subsequent loads: only bump when truly new
-  window['lastSeq'] = seq;
-  window['lastUpdatedAt'] = updAt;
-  window['lastUploadType'] = upType;
-
-  // Sync uptime baseline on any real upload using server-provided monitorStartTime
-  const msFromServer = (j && j.data && j.data.monitorStartTime) ? Number(new Date(j.data.monitorStartTime).getTime()) : null;
-  if ((upType === "alive" || upType === "data") && msFromServer) { window.monitorStartTime = msFromServer; }
-
-
-  // Only bump the comms timer on real uploads (not stale-status pings)
-  if (upType !== 'stale-status') {
-    window.lastUploadReceivedTime = j.data.updatedAt ? Date.parse(j.data.updatedAt) : 0;
-  }
-
-  // Fallback only if server did not send a baseline
-  if (prevLastType === 'stale-status' && (upType === 'alive' || upType === 'data') && !(j && j.data && j.data.monitorStartTime)) {
-    window.monitorStartTime = Date.now();
-  }
-}
-
-      return decryptData(
-        j.data,
-        window.currentPassphrase,
-        window.currentSalt,
-        window.currentIterations
-      )
-      .then(data => {
-        if (data && data.lastUpdate) {
-          // Save the writer's lastUpdate (as ms) so we can decide red after ~1 minute if writer stalls
-          window.lastWriterUpdateTime = new Date(data.lastUpdate).getTime();
-        }
-        // Also adopt *inner* monitorStartTime on alive/data
-          if (data && (upType === "alive" || upType === "data") && data.monitorStartTime) {
-            const innerMs = Number(new Date(data.monitorStartTime).getTime());
-            if (Number.isFinite(innerMs)) {
-              window.monitorStartTime = innerMs;
-              updateMonitorStatus(); // immediate repaint after inner baseline
-            }
+          // Always record comms timestamp on alive/data (even if seq/updatedAt unchanged)
+          if (upType === "alive" || upType === "data") {
+            window.lastUploadReceivedTime = j.data.updatedAt ? Date.parse(j.data.updatedAt) : Date.now();
           }
-          // Refresh lastDataChangeTime from inner payload if newer
-          if (data && data.lastDataChangeTime) {
-            const innerChange = new Date(data.lastDataChangeTime).getTime();
-            if (!window.lastDataChangeTime || innerChange > window.lastDataChangeTime) {
-              window.lastDataChangeTime = innerChange;
+
+          // Force-set baseline from OUTER payload on every auto-refresh
+          (function() {
+            const outerMs = (j && j.data && j.data.monitorStartTime) ? Number(new Date(j.data.monitorStartTime).getTime()) : NaN;
+            if (Number.isFinite(outerMs) && (upType === "alive" || upType === "data" || upType === "stale-status")) {
+              window.monitorStartTime = outerMs;
+              updateMonitorStatus(); // immediate repaint after outer baseline
             }
+          })();
+
+          // Only update "Last data update" when the upload was a real data change
+          if (j.data?.uploadType === 'data' && j.data?.lastDataChangeTime) {
+            window.lastDataChangeTime = new Date(j.data.lastDataChangeTime).getTime();
           }
-          return showData(data);
-      })
-.catch(err => {
-        console.error('Auto-refresh decrypt error:', err);
-        // Optionally, show a warning or revert to login if continuous failures
-      });
-    }); // <-- closes: .then(j => { ... })
+
+          // Detect a *new* upload (data or alive) by seq/updatedAt change
+          const hadPrev =
+            (typeof window['lastSeq'] !== 'undefined') ||
+            (typeof window['lastUpdatedAt'] !== 'undefined');
+
+          const prevLastType = window['lastUploadType']; // capture BEFORE we update it
+
+          const changed =
+            hadPrev &&
+            (seq !== window['lastSeq'] || updAt !== window['lastUpdatedAt']);
+
+          if (!hadPrev) {
+            // First load after reload: initialize state from the blob
+            window['lastSeq'] = seq;
+            window['lastUpdatedAt'] = updAt;
+            window['lastUploadType'] = upType;
+
+            // Sync uptime baseline on any upload using server-provided monitorStartTime
+            const msFromServer = (j && j.data && j.data.monitorStartTime) ? Number(new Date(j.data.monitorStartTime).getTime()) : null;
+            if ((upType === "alive" || upType === "data" || upType === "stale-status") && msFromServer) {
+              window.monitorStartTime = msFromServer;
+            }
+
+            // IMPORTANT: seed comms timer from the blob’s timestamp, not Date.now().
+            // If the backend is already stale, the dot will show it immediately.
+            // If the worker included updatedAt as an ISO string, use it; otherwise 0.
+            window.lastUploadReceivedTime = updAt ? Date.parse(updAt) : 0;
+
+          } else if (changed) {
+            console.log("[DEBUG] AutoRefresh: Detected new uploadType:", upType, "prev:", prevLastType, "at", new Date().toISOString());
+            // Subsequent loads: only bump when truly new
+            window['lastSeq'] = seq;
+            window['lastUpdatedAt'] = updAt;
+            window['lastUploadType'] = upType;
+
+            // Sync uptime baseline on any upload using server-provided monitorStartTime
+            const msFromServer = (j && j.data && j.data.monitorStartTime) ? Number(new Date(j.data.monitorStartTime).getTime()) : null;
+            if ((upType === "alive" || upType === "data" || upType === "stale-status") && msFromServer) {
+              window.monitorStartTime = msFromServer;
+            }
+
+            // Only bump the comms timer on real uploads (not stale-status pings)
+            if (upType !== 'stale-status') {
+              window.lastUploadReceivedTime = j.data.updatedAt ? Date.parse(j.data.updatedAt) : 0;
+            }
+
+            // Fallback only if server did not send a baseline
+            if (
+              prevLastType === 'stale-status'
+              && (upType === 'alive' || upType === 'data' || upType === 'stale-status')
+              && !(j && j.data && j.data.monitorStartTime)
+            ) {
+              window.monitorStartTime = Date.now();
+            }
+
+            return decryptData(
+              j.data,
+              window.currentPassphrase,
+              window.currentSalt,
+              window.currentIterations
+            )
+            .then(data => {
+              if (data && data.lastUpdate) {
+                // Save the writer's lastUpdate (as ms) so we can decide red after ~1 minute if writer stalls
+                window.lastWriterUpdateTime = new Date(data.lastUpdate).getTime();
+              }
+
+            // Also adopt *inner* monitorStartTime on alive/data (but NOT stale-status)
+            if (data && (upType === "alive" || upType === "data") && data.monitorStartTime) {
+              const innerMs = Number(new Date(data.monitorStartTime).getTime());
+              if (Number.isFinite(innerMs)) {
+                window.monitorStartTime = innerMs;
+                updateMonitorStatus(); // immediate repaint after inner baseline
+              }
+            }
+
+              // Refresh lastDataChangeTime from inner payload if newer
+              if (data && data.lastDataChangeTime) {
+                const innerChange = new Date(data.lastDataChangeTime).getTime();
+                if (!window.lastDataChangeTime || innerChange > window.lastDataChangeTime) {
+                  window.lastDataChangeTime = innerChange;
+                }
+              }
+              return showData(data);
+            })
+            .catch(err => {
+              console.error('Auto-refresh decrypt error:', err);
+              // Optionally, show a warning or revert to login if continuous failures
+            });
+          }
+        })
+        .catch(err => {
+          console.error('Auto-refresh fetch error:', err);
+        });
+    }
   }
-}
 
   // Call once immediately
   doPoll();
-  
+
   // Then poll every 15 seconds
   window.dashboardRefreshInterval = setInterval(doPoll, 15000);
 }
@@ -597,10 +599,8 @@ function updateMonitorStatus() {
     return;
   }
 
-
   const now = Date.now();
 
-  
   // Calculate elapsed times
   const mst = (typeof window.monitorStartTime === 'number' && Number.isFinite(window.monitorStartTime))
     ? window.monitorStartTime
@@ -641,8 +641,6 @@ function updateMonitorStatus() {
     dotColor = 'red';
     statusText = 'MONITOR OFFLINE SINCE:';
   }
-
-
 
   if (statusDotEl) {
     statusDotEl.className = 'status-dot ' + dotColor;

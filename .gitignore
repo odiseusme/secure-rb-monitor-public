@@ -29,3 +29,4 @@ museum/nano poll-all-services.sh
 .cloudflare-config.json
 museum/
 .last-sync-hash
+.cf-sync-state.json

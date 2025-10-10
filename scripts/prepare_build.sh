@@ -157,6 +157,15 @@ discover_watchers_and_generate_files() {
     done < <(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{println $k}}{{end}}' "$name")
   done
 
+  # Create missing external networks
+  log "Ensuring external networks exist…"
+  for net in "${!networks[@]}"; do
+    if ! docker network inspect "$net" >/dev/null 2>&1; then
+      log "Creating network: $net"
+      docker network create "$net" || log "Warning: Could not create network $net"
+    fi
+  done
+
   local override_file="${PROJECT_ROOT}/docker-compose.override.yml"
   log "Generating ${override_file}…"
   {

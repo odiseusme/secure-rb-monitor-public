@@ -295,7 +295,6 @@ async performHeartbeat() {
     
     const statusData = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
     this.currentTimestamp = statusData.lastUpdate;
-    // --- Stale-status probe (no behavior change yet) ---
 let staleSec = 0;
 try {
   const tsMs = new Date(this.currentTimestamp).getTime();
@@ -309,34 +308,38 @@ try {
 
     // 2. Check if timestamp changed
     const timestampChanged = (this.currentTimestamp !== this.previousTimestamp);
-    
-    // ---- writer-stall tracking (used for stale and recovery logic) ----
-    const prevWasStale = !!this.wasWriterStale;       // remember previous tick state
-    this.wasWriterStale = (!timestampChanged && staleSec >= 60); // update current state
-    this.lastStaleReportAt = this.lastStaleReportAt || 0;     // init throttle counter
 
-    
-    // 3. Calculate data hash (excluding lastUpdate)
-    const dataForHash = { ...statusData };
-    delete dataForHash.lastUpdate;
-    this.dataHash = this.calculateHash(dataForHash);
-    const dataChanged = (this.dataHash !== this.prevDataHash);
-    
-    // 4. Determine if upload needed
-    let shouldUpload = false;
-    let uploadType = null;
-    
+// ---- writer-stall tracking (used for stale and recovery logic) ----
+const prevWasStale = !!this.wasWriterStale;       // remember previous tick state
+this.wasWriterStale = (!timestampChanged && staleSec >= 60); // update current state
+this.lastStaleReportAt = this.lastStaleReportAt || 0;     // init throttle counter
+
+// 3. Calculate data hash (excluding lastUpdate)
+const dataForHash = { ...statusData };
+delete dataForHash.lastUpdate;
+this.dataHash = this.calculateHash(dataForHash);
+const dataChanged = (this.dataHash !== this.prevDataHash);
+
+// 4. Determine if upload needed
+let shouldUpload = false;
+let uploadType = null;
+
 if (!timestampChanged) {
   // Writer not updating
-  console.log('[HB] Timestamp unchanged - write_status.js appears down');
-
   // If stale ≥60s, send a *throttled* stale-status upload (max once per 5 min)
   const nowMs = Date.now();
   if (staleSec >= 60 && (nowMs - this.lastStaleReportAt) >= 90000) {
+    // Reset monitorStartTime when FIRST entering stale state
+    if (!prevWasStale) {
+      this.monitorStartTime = nowMs;
+      console.log('[STALE] Writer stalled - resetting monitorStartTime');
+    }
+    
     uploadType = 'stale-status';
     shouldUpload = true;
     this.lastStaleReportAt = nowMs;
     console.log(`[STALE] Reporting stale-status (stale ${staleSec}s)`);
+
   } else {
     shouldUpload = false;
   }

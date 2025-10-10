@@ -22,15 +22,16 @@ Registering with Cloudflare...
 
 ✅ Registration complete. Saved to .cloudflare-config.json
 
-Public ID:     5dpW85SRHX26uD6vOYCuDna8tmY6kdx0
-Write token:   OmPbAIU6ZXTkHz5HjW2hVJfzz9ljMJmXoA8Ix83Upsibuhecc9SUSB6oHM9uRCYO
-Salt (b64):    jMW1kv4JXAcqAspidQSUMN82CJt7ElFO
-Dashboard URL: http://localhost:38472/d/5dpW85SRHX26uD6vOYCuDna8tmY6kdx0
-
+Public ID:     gQpqb2PBIVkqPyNwA9LUw4LOoatUZ9Zt
+Write token:   ePEIHtbuXd4n56Bw41Mefoa7ZZhnkNVOgrp99hGMmHyjkCmGqbGlRD1tfGpXEQVC
+Salt (b64):    gHoMAHheTY0DGIQSFyyKvGBbw2Tdvuyo
+Dashboard URL: http://localhost:38472/d/gQpqb2PBIVkqPyNwA9LUw4LOoatUZ9Zt
 
 5. Then run???
 BASE_URL=http://localhost:38472 \
-WRITE_TOKEN=OmPbAIU6ZXTkHz5HjW2hVJfzz9ljMJmXoA8Ix83Upsibuhecc9SUSB6oHM9uRCYO \
+WRITE_TOKEN=ePEIHtbuXd4n56Bw41Mefoa7ZZhnkNVOgrp99hGMmHyjkCmGqbGlRD1tfGpXEQVC \
 DASH_PASSPHRASE=TestPassphrase123! \
-DASH_SALT_B64=jMW1kv4JXAcqAspidQSUMN82CJt7ElFO \
+DASH_SALT_B64=gHoMAHheTY0DGIQSFyyKvGBbw2Tdvuyo \
+
+http://localhost:38472/d/xKSqIkJjjXXY3jh1VdIxfGwi2W4WoGhj?
 
