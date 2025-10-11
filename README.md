@@ -1,10 +1,17 @@
+
 # Secure RB Monitor (Public Baseline)
+
+Monitor Rosen Bridge Watchers securely with a simple, mobile-friendly web UI and no privileged access. Features zero-knowledge, end-to-end encrypted remote monitoring via Cloudflare Worker or local Docker deployment.
 
 A lightweight monitoring and status publishing component for the Watchers of the Rosen Bridge infrastructure.
 
+
 _Current focus:_
+- Zero-knowledge, end-to-end encrypted monitoring (AES-GCM, PBKDF2)
 - Minimal web status UI (`public/` assets + `static-server.js`)
 - Secure API-based monitoring (no privileged Docker access required)
+- Cloudflare Worker backend for remote dashboard access
+- Invitation-based user registration and onboarding
 - Automatic watcher discovery and network configuration
 - Simple bootstrap scripts for local/container usage
 
@@ -34,22 +41,29 @@ _Current focus:_
 - [License](#license)
 
 ## Purpose
-Openly reviewable, security-hardened monitoring solution for Rosen Bridge ecosystem. Enables:
+Openly reviewable, security-hardened, zero-knowledge monitoring solution for the Rosen Bridge ecosystem. Enables:
 - Local or containerized deployment without privileged access
+- Remote dashboard access via Cloudflare Worker (end-to-end encrypted)
+- Invitation-based user onboarding (admin-controlled)
 - Automatic discovery and monitoring of watcher services
 - Secure API-based data collection (no Docker socket required)
-- Basic static hosting of status artifacts and UI
+- Hosts a simple, mobile-responsive web dashboard for status viewing
 
-## Security Architecture
+## Security & Privacy Architecture
+
+**Zero-Knowledge, End-to-End Encryption:**
+- All monitoring data is encrypted client-side (AES-GCM, PBKDF2-SHA256)
+- Server (Cloudflare Worker or local) never sees decrypted data or user passphrases
+- Decryption happens only in your browser
 
 **Key security improvements:**
-- **No Docker socket access required** - Eliminates privileged container access
-- **API-only monitoring** - Direct HTTP polling of watcher endpoints
-- **Automatic network discovery** - Safe attachment to watcher networks only
-- **Read-only container filesystem** - Immutable runtime environment
-- **Minimal capabilities** - Drops all unnecessary Linux capabilities
+- No Docker socket access required (eliminates privileged container access)
+- API-only monitoring (direct HTTP polling of watcher endpoints)
+- Automatic network discovery (safe attachment to watcher networks only)
+- Read-only container filesystem (immutable runtime environment)
+- Minimal container capabilities (drops all unnecessary Linux capabilities)
 
-The monitor operates entirely through network API calls, requiring no host system access or privileged Docker operations.
+The monitor operates entirely through network API calls, requiring no host system access or privileged Docker operations. For remote deployments, all data is encrypted before upload and decrypted only in the browser.
 
 ## Non-Goals (Now)
 - Production-hardening (HA, clustering)
@@ -57,17 +71,21 @@ The monitor operates entirely through network API calls, requiring no host syste
 - Observability (structured metrics/log shipping)
 - Comprehensive test suite (placeholder only)
 
+
 ## Quick Start
+
 
 ### Prerequisites
 - Node.js (LTS) OR Docker
 - Docker Compose (for container deployment)
 - Running Rosen Bridge watcher containers
 - (Optional) `qrencode` for QR code output
+- (Optional) Cloudflare account for remote dashboard (see below)
+
 
 ### Normal Workflow (3 Steps)
 
-**For most users - this is all you need:**
+**For most users (local or Docker):**
 
 ```bash
 # 1. Clone
@@ -81,7 +99,13 @@ cd secure-rb-monitor-public
 docker compose up -d --build
 ```
 
-**Access:** normally (unless 8080 is taken) `http://localhost:${HOST_PORT:-8080}/`
+
+
+**Access:**
+- For Docker deployment, the script auto-selects an available port and prints the access URL (normally `http://localhost:${HOST_PORT:-8080}/`).
+- For Cloudflare Worker/local development, the default port is `38472` (e.g., `http://localhost:38472/`).
+
+**Note:** The two environments use different default ports by design. You can change these via the `HOST_PORT` variable (Docker) or `BASE_URL` (Cloudflare/local dev) as needed. Be aware of which environment you are using when accessing the dashboard or configuring scripts.
 
 The setup script automatically:
 - Discovers all running watcher containers
@@ -91,6 +115,11 @@ The setup script automatically:
 - Displays access URLs
 
 ---
+
+
+### Remote Cloudflare Worker Deployment
+
+For secure remote monitoring, deploy the Cloudflare Worker backend and use the invitation-based registration system. See `cloudflare-sync.js` and `setup-cloudflare.js` for details. All data is encrypted before upload; only you can decrypt it in your browser.
 
 ### Advanced Setup Options
 
@@ -155,9 +184,13 @@ docker compose up -d --build
 
 The script will automatically discover new watchers and update network configurations.
 
-#### Manual Status Update
+
+#### Manual Status Update & Encrypted Upload
 ```bash
+# Update status.json
 node write_status.js
+# Encrypt and upload to Cloudflare Worker
+node cloudflare-sync.js
 ```
 
 #### View Logs
@@ -188,13 +221,20 @@ mkdir -p data logs config public
 
 These directories will be mounted as volumes for persistent data storage.
 
+
 **Next Steps:**
 - Monitor watcher health and performance
 - Set up alerts for failed watchers (see TODO.md)
 - Customize UI for your specific needs
 - Add metrics/structured logging
+- Register users and manage invitations (Cloudflare Worker)
 
 ---
+
+
+## User Registration & Access (Cloudflare Worker)
+
+For remote dashboards, users register via invitation codes generated by the admin. Registration and access are managed by the Cloudflare Worker backend. See `setup-cloudflare.js` and project docs for details.
 
 ## Configuration
 
@@ -213,18 +253,24 @@ Generated automatically by `prepare_build.sh` based on running containers.
 
 ---
 
+
 ## Architecture Overview
+
 
 ### Core Data Flow
 1. `prepare_build.sh` discovers watchers and configures networks
-2. `status-updater.js` schedules periodic collection
-3. `write_status.js` polls watcher APIs → writes `status.json`
-4. `static-server.js` serves UI and status data
+2. `write_status.js` polls watcher APIs → writes `status.json`
+3. `cloudflare-sync.js` encrypts and uploads status to Cloudflare Worker
+4. `static-server.js` or Cloudflare Worker serves UI and status data
+
 
 ### Scripts
 - `scripts/prepare_build.sh`: Auto-discovery, port selection, network setup
 - `scripts/serve_public.sh`: Static server wrapper
 - `scripts/show_monitor_url.sh`: Display access URLs
+- `cloudflare-sync.js`: Encrypts and uploads status to Cloudflare Worker
+- `setup-cloudflare.js`: Registers users via invitation codes
+
 
 ### Docker
 Container features:
@@ -233,6 +279,7 @@ Container features:
 - Read-only filesystem
 - No privileged access required
 - Automatic network attachment to watcher networks
+
 
 ### Network Architecture
 The monitor attaches to watcher Docker networks automatically:
@@ -244,6 +291,7 @@ The monitor attaches to watcher Docker networks automatically:
 **Security benefit:** No Docker socket access required - only network-level API communication.
 
 ---
+
 
 ## Project Layout
 ```
@@ -264,6 +312,7 @@ The monitor attaches to watcher Docker networks automatically:
 
 ---
 
+
 ## Development Workflow
 1. Install Node.js (or rely on Docker)
 2. Run `./scripts/prepare_build.sh` for automatic setup
@@ -274,6 +323,7 @@ The monitor attaches to watcher Docker networks automatically:
 CI: GitHub Actions (baseline).
 
 ---
+
 
 ## 🛡️ Security Features
 
@@ -333,11 +383,28 @@ No changes to application usage are required.- Clear error reporting in status o
 
 
 ### Troubleshooting
-- **Watchers not discovered**: Check container naming (must end with '-service-1')
-- **Network connection issues**: Re-run `./scripts/prepare_build.sh` to regenerate network config
-- **Permission errors**: Container runs as non-root with minimal capabilities
+
+- **Watchers not discovered:** Check container naming (must end with `-service-1`).
+- **Network connection issues:** Re-run `./scripts/prepare_build.sh` to regenerate network config.
+- **Permission errors:** Container runs as non-root with minimal capabilities.
 
 ---
+
+
+## Environment Variables
+
+**Local/Docker:**
+- `HOST_PORT`, `NODE_ENV`, etc. (see `.env`)
+
+**Cloudflare Worker:**
+- `ADMIN_API_KEY` (admin authentication)
+- `USERS_KV` (KV namespace binding)
+- `ENVIRONMENT` ("development" or "production")
+
+**Upload Script:**
+- `DASH_PASSPHRASE`, `DASH_SALT_B64`, `WRITE_TOKEN`, `BASE_URL`
+
+See project docs for full details and examples.
 
 ## Contributing
 See `CONTRIBUTING.md` for branching, commit style, and review expectations.

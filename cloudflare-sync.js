@@ -216,10 +216,7 @@ async uploadToCloudflare(opts = {}) {
     const raw = fs.readFileSync(STATUS_FILE, 'utf8');
     const data = JSON.parse(raw);
     
-    // Data is being encrypted successfully
-
-    // Increment version BEFORE upload attempt
-    // Start with a high version number to avoid conflicts with existing Worker data
+  // Increment version BEFORE upload attempt (start high to avoid conflicts)
     const nextVersion = Math.max((this.version ?? 1) + 1, 4800);
 const { payload, thisHash } = await buildEncryptedPayloadGCM(
   data,
@@ -237,7 +234,6 @@ const { payload, thisHash } = await buildEncryptedPayloadGCM(
   }
 );
 
-    // POST the encrypted payload to the Worker
     const response = await fetch(`${workerUrl}/api/update`, {
       method: 'POST',
       headers: {
@@ -247,14 +243,12 @@ const { payload, thisHash } = await buildEncryptedPayloadGCM(
       body: JSON.stringify(payload)
     });
 
-    // Handle result
     if (!response.ok) {
       const body = await response.text();
       console.error(`Upload failed: ${response.status}`, body);
       return false;
     }
 
-// Success: bump version
 this.version = nextVersion;
 console.log('Upload OK, version:', nextVersion, 'bytes:', payload.ciphertext.length);
 return true;
@@ -287,7 +281,6 @@ async syncIfChanged() {
 
 async performHeartbeat() {
   try {
-    // 1. Read status.json
     if (!fs.existsSync(STATUS_FILE)) {
       console.log('[HB] Status file not found');
       return false;
@@ -306,27 +299,21 @@ try {
   // ignore parse errors
 }
 
-    // 2. Check if timestamp changed
     const timestampChanged = (this.currentTimestamp !== this.previousTimestamp);
 
-// ---- writer-stall tracking (used for stale and recovery logic) ----
 const prevWasStale = !!this.wasWriterStale;       // remember previous tick state
 this.wasWriterStale = (!timestampChanged && staleSec >= 60); // update current state
 this.lastStaleReportAt = this.lastStaleReportAt || 0;     // init throttle counter
 
-// 3. Calculate data hash (excluding lastUpdate)
 const dataForHash = { ...statusData };
 delete dataForHash.lastUpdate;
 this.dataHash = this.calculateHash(dataForHash);
 const dataChanged = (this.dataHash !== this.prevDataHash);
 
-// 4. Determine if upload needed
 let shouldUpload = false;
 let uploadType = null;
 
 if (!timestampChanged) {
-  // Writer not updating
-  // If stale ≥60s, send a *throttled* stale-status upload (max once per 5 min)
   const nowMs = Date.now();
   if (staleSec >= 60 && (nowMs - this.lastStaleReportAt) >= 90000) {
     // Reset monitorStartTime when FIRST entering stale state
@@ -345,7 +332,6 @@ if (!timestampChanged) {
   }
 
 } else {
-  // Writer is updating again
   this.previousTimestamp = this.currentTimestamp;
   this.heartbeatCounter++;
 
@@ -375,7 +361,6 @@ if (!timestampChanged) {
   }
 }
 
-    // 5. Handle outage recovery
     const now = Date.now();
     if (shouldUpload && this.lastUploadTime) {
       const timeSinceLastUpload = now - this.lastUploadTime;
@@ -413,7 +398,7 @@ if (!timestampChanged) {
     if (shouldUpload) {
       console.log(`[UPLOAD] Type: ${uploadType}, Sequence: ${this.sequenceNumber + 1}`);
       
-      // Increment sequence number BEFORE upload
+  // Increment sequence number before upload
       this.sequenceNumber++;
       
       const result = await this.uploadToCloudflare({
@@ -427,14 +412,14 @@ if (!timestampChanged) {
 
 
       if (result) {
-        // Success: update state
+  // Update state on success
         this.prevDataHash = this.dataHash;
         this.lastUploadTime = now;
         this.saveLastHash();
         console.log(`[UPLOAD] Success - ${uploadType} upload completed`);
         return true;
       } else {
-        // Failed: rollback sequence number
+  // Rollback sequence number on failure
         this.sequenceNumber--;
         this.heartbeatCounter = 10; // Force retry on next heartbeat
         console.log('[UPLOAD] Failed - will retry');
@@ -532,12 +517,10 @@ async function buildEncryptedPayloadGCM(data, opts = {}) {
   const schemaVersion = 1;
   const issuedAt = new Date().toISOString();
 
-  // 1) prepare plaintext (stable JSON text for consistent hashing)
+  // Prepare stable JSON text for hashing
   const jsonText = normalizeJsonString(data);
   
-  // Data is being processed correctly
-
-  // 2) encrypt using PBKDF2-SHA256 -> AES-GCM (helpers handle WebCrypto)
+  // Encrypt using PBKDF2-SHA256 -> AES-GCM
   const enc = await encryptGCM({
     passphrase: opts.passphrase || PASS_PHRASE,   // use passed passphrase or fallback
     saltB64:   opts.saltB64 || SALT_B64,          // use passed salt or fallback
@@ -545,7 +528,7 @@ async function buildEncryptedPayloadGCM(data, opts = {}) {
     iterations: opts.iterations || KDF_ITERS      // use passed iterations or fallback
   });
 
-// 3) envelope to send to Worker
+// Envelope to send to Worker
   const payload = {
     nonce: enc.nonceB64,
     ciphertext: enc.ctB64,
@@ -559,14 +542,14 @@ async function buildEncryptedPayloadGCM(data, opts = {}) {
   };
 if (opts.prevHash) payload.prevHash = opts.prevHash;
 
-  // 4) compute current hash for caller to store/compare (helps skip unchanged)
+  // Compute current hash for change detection
   const thisHash = sha256b64(jsonText);
 
   return { payload, thisHash };
 }
 module.exports.buildEncryptedPayloadGCM = buildEncryptedPayloadGCM;
 
-// === added: dry-run builder (only runs if DRY_RUN_BUILD=1) ===============
+// Dry-run builder (only runs if DRY_RUN_BUILD=1)
 if (require.main === module && process.env.DRY_RUN_BUILD === '1') {
   (async () => {
     try {
