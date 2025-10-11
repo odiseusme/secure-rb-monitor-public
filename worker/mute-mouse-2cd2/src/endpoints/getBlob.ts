@@ -59,36 +59,46 @@ export class GetBlob extends OpenAPIRoute {
         return c.json({ error: "Invalid public ID" }, 400);
       }
 
-      // Rate limiting for reads
-      const rateLimitKey = `rate:${publicId}`;
-      const rateLimitData = await c.env.USERS_KV.get(rateLimitKey);
-      
-      if (rateLimitData) {
-        const rateLimit = JSON.parse(rateLimitData);
-        const now = new Date();
-        const lastReset = new Date(rateLimit.lastReset);
-        const hoursSinceReset = (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60);
-        
-        if (hoursSinceReset < 1 && rateLimit.reads >= 30) { // 30 reads per hour limit
-          // Track rate limit violation before returning error
-          const userDataRaw = await c.env.USERS_KV.get(`user:${publicId}`);
-          if (userDataRaw) {
-            const userData = JSON.parse(userDataRaw);
-            userData.rateLimitViolations = (userData.rateLimitViolations || 0) + 1;
-            await c.env.USERS_KV.put(`user:${publicId}`, JSON.stringify(userData));
-          }
-          return c.json({ error: "Rate limit exceeded" }, 429);
-        }
-        
-        // Reset counters if more than an hour has passed
-        if (hoursSinceReset >= 1) {
-          rateLimit.reads = 0;
-          rateLimit.lastReset = now.toISOString();
-        }
-        
-        rateLimit.reads++;
-        await c.env.USERS_KV.put(rateLimitKey, JSON.stringify(rateLimit), { expirationTtl: 3600 });
-      }
+// Rate limiting for reads
+const rateLimitKey = `rate:${publicId}`;
+const rateLimitData = await c.env.USERS_KV.get(rateLimitKey);
+
+let rateLimit;
+if (rateLimitData) {
+  rateLimit = JSON.parse(rateLimitData);
+} else {
+  // Initialize rate limit counter on first request
+  rateLimit = {
+    reads: 0,
+    lastReset: new Date().toISOString()
+  };
+}
+
+const now = new Date();
+const lastReset = new Date(rateLimit.lastReset);
+const hoursSinceReset = (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60);
+
+// Reset counters if more than an hour has passed
+if (hoursSinceReset >= 1) {
+  rateLimit.reads = 0;
+  rateLimit.lastReset = now.toISOString();
+}
+
+// Check if rate limit exceeded BEFORE incrementing
+if (rateLimit.reads >= 30) { // 30 reads per hour limit
+  // Track rate limit violation before returning error
+  const userDataRaw = await c.env.USERS_KV.get(`user:${publicId}`);
+  if (userDataRaw) {
+    const userData = JSON.parse(userDataRaw);
+    userData.rateLimitViolations = (userData.rateLimitViolations || 0) + 1;
+    await c.env.USERS_KV.put(`user:${publicId}`, JSON.stringify(userData));
+  }
+  return c.json({ error: "Rate limit exceeded" }, 429);
+}
+
+// Increment counter AFTER checking limit
+rateLimit.reads++;
+await c.env.USERS_KV.put(rateLimitKey, JSON.stringify(rateLimit), { expirationTtl: 3600 });
 
       // Get user metadata
       const userDataRaw = await c.env.USERS_KV.get(`user:${publicId}`);

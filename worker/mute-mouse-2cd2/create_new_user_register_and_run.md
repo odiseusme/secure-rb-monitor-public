@@ -10,13 +10,13 @@ curl -X POST http://localhost:38472/api/admin/create-invite \
 3. Now register the user:
 BASE_URL=http://localhost:38472 node setup-cloudflare.js
 
-4. Use the invitation code from the previous step: INVITE-BMGJTC-7D5537
+4. Use the invitation code from the previous step: INVITE-1CB83K-SU7AVC
 After registration, you'll get the new publicId and dashboard URL for port 38472. 
 
 
 Found existing configuration.
 Do you want to create a new registration? (y/N): y
-Enter your invitation code: INVITE-BMGJTC-7D5537
+Enter your invitation code: INVITE-7XH9B6-FH41XI
 
 Registering with Cloudflare...
 
@@ -34,16 +34,16 @@ DASH_PASSPHRASE=TestPassphrase123! \
 DASH_SALT_B64=gHoMAHheTY0DGIQSFyyKvGBbw2Tdvuyo \
 
 11/10/2025
-Public ID:     xfbPdNvTRARns9bHFNTKaqVF1jnqVBVE
-Write token:   1JURBLj1OLk0TUHrK3V44YTRkya9yRkMlcgjsqGki3f70IKC7sxDNO8ODxf9hSvz
-Salt (b64):    ohhN90DX4mKXOoW3Ksm7hS4U0ltBhXoy
-Dashboard URL: http://localhost:38472/d/xfbPdNvTRARns9bHFNTKaqVF1jnqVBVE
+Public ID:     h3YrnslyfveBQ38hZsSkmRLo5iSfVbHQ
+Write token:   IHsXz65hRizeQu1pJ0lLCHgK7EH8SIYmdIeDvp2G02kq2mOwPjshkqY9nnRDufl1
+Salt (b64):    QDJxVRIjN0cZUHGENGhdpIttypWsyhxX
+Dashboard URL: http://localhost:38472/d/h3YrnslyfveBQ38hZsSkmRLo5iSfVbHQ
 
 BASE_URL=http://localhost:38472 \
-WRITE_TOKEN=1JURBLj1OLk0TUHrK3V44YTRkya9yRkMlcgjsqGki3f70IKC7sxDNO8ODxf9hSvz \
+WRITE_TOKEN=IHsXz65hRizeQu1pJ0lLCHgK7EH8SIYmdIeDvp2G02kq2mOwPjshkqY9nnRDufl1 \
 DASH_PASSPHRASE=TestPassphrase123! \
-DASH_SALT_B64=ohhN90DX4mKXOoW3Ksm7hS4U0ltBhXoy \
-
+DASH_SALT_B64=QDJxVRIjN0cZUHGENGhdpIttypWsyhxX \
+node cloudflare-sync.js
 
 http://localhost:38472/d/xKSqIkJjjXXY3jh1VdIxfGwi2W4WoGhj?
 
