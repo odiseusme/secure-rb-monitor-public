@@ -10,7 +10,7 @@
     { "binding": "USERS_KV", "id": "dev-users-kv" }
   ],
 
-  // Don’t upload editor temp files; prevents reload-churn
+  // Don't upload editor temp files; prevents reload-churn
   "upload": {
     "exclude": [
       "**/*.swp",
@@ -29,7 +29,7 @@
         "ENVIRONMENT": "production"
       },
       // Replace the placeholder below with your real KV namespace ID
-      // after you create it (we’ll do that in the next steps).
+      // after you create it (we'll do that in the next steps).
       "kv_namespaces": [
         { "binding": "USERS_KV", "id": "USERS_KV_PROD_NAMESPACE_ID" }
       ]

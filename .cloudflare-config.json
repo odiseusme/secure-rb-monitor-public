@@ -1,12 +1,12 @@
 {
   "baseUrl": "http://localhost:38472",
-  "publicId": "xfbPdNvTRARns9bHFNTKaqVF1jnqVBVE",
-  "writeToken": "1JURBLj1OLk0TUHrK3V44YTRkya9yRkMlcgjsqGki3f70IKC7sxDNO8ODxf9hSvz",
-  "salt": "ohhN90DX4mKXOoW3Ksm7hS4U0ltBhXoy",
+  "publicId": "O6LYnkCRx6RlxD4Dm3CLCMpRzDEYllEj",
+  "writeToken": "dGVhboQhGl4cTkbEt1IPrYdpApDS5DpIVVcJIAf2wiS2wvbqT7MdhRDvAAPCp3Md",
+  "salt": "xayewyjFbHnSKvxerprZodvWZ5vHE5ND",
   "kdfParams": {
     "algorithm": "PBKDF2",
     "hash": "SHA256",
     "iterations": 100000
   },
-  "dashboardUrl": "http://localhost:38472/d/xfbPdNvTRARns9bHFNTKaqVF1jnqVBVE"
+  "dashboardUrl": "http://localhost:38472/d/O6LYnkCRx6RlxD4Dm3CLCMpRzDEYllEj"
 }

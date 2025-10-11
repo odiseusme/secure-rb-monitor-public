@@ -125,63 +125,62 @@ function getPersistedLastDataChangeTime() {
   return (typeof num === 'number' && num > 0) ? num : null;
 }
 
+    // Step 1: Login, decryption
+    async function decrypt(passphraseOverride) {
+      const passInput = document.getElementById('pass');
+      const pass = passphraseOverride !== undefined ? passphraseOverride : passInput.value;
+      if (!pass) {
+        document.getElementById('error').textContent = 'Please enter your passphrase';
+        return;
+      }
+      try {
+        document.getElementById('error').textContent = '';
+        const res = await fetch('/api/blob/' + PUBLIC_ID);
+        if (!res.ok) throw new Error('Failed to fetch data');
+        const j = await res.json();
+        const saltB64 = j.userInfo.salt;
+        const iterations = j.userInfo.kdfParams?.iterations || DEFAULT_KDF_ITERS;
+        const data = await decryptData(j.data, pass, saltB64, iterations);
 
-// Step 1: Login, decryption
-async function decrypt(passphraseOverride) {
-  const passInput = document.getElementById('pass');
-  const pass = passphraseOverride !== undefined ? passphraseOverride : passInput.value;
-  if (!pass) {
-    document.getElementById('error').textContent = 'Please enter your passphrase';
-    return;
-  }
-  try {
-    document.getElementById('error').textContent = '';
-    const res = await fetch('/api/blob/' + PUBLIC_ID);
-    if (!res.ok) throw new Error('Failed to fetch data');
-    const j = await res.json();
-    const saltB64 = j.userInfo.salt;
-    const iterations = j.userInfo.kdfParams?.iterations || DEFAULT_KDF_ITERS;
-    const data = await decryptData(j.data, pass, saltB64, iterations);
+        // Initialize UI baselines from *decrypted* inner payload
+        window.monitorStartTime   = (data && data.monitorStartTime)   ? new Date(data.monitorStartTime).getTime()   : undefined;
+        // PATCH: Use backend if present, else localStorage fallback for lastDataChangeTime
+        if (data && data.lastDataChangeTime) {
+          window.lastDataChangeTime = new Date(data.lastDataChangeTime).getTime();
+          persistLastDataChangeTime(window.lastDataChangeTime);
+        } else {
+          // fallback to persisted value (if any)
+          const persisted = getPersistedLastDataChangeTime();
+          window.lastDataChangeTime = persisted;
+        }
+        window.lastUploadReceivedTime = j.data.updatedAt ? Date.parse(j.data.updatedAt) : Date.now();
+        window.lastUploadType = j.data.uploadType || null;
+        window.lastSeq = (typeof j.data.sequenceNumber === "number") ? j.data.sequenceNumber : null;
+        window.lastUpdatedAt = j.data.updatedAt || null;
 
-    // Initialize UI baselines from *decrypted* inner payload
-    window.monitorStartTime = (data && data.monitorStartTime) ? new Date(data.monitorStartTime).getTime() : undefined;
-    // PATCH: Use backend if present, else localStorage fallback for lastDataChangeTime
-    if (data && data.lastDataChangeTime) {
-      window.lastDataChangeTime = new Date(data.lastDataChangeTime).getTime();
-      persistLastDataChangeTime(window.lastDataChangeTime);
-    } else {
-      // fallback to persisted value (if any)
-      const persisted = getPersistedLastDataChangeTime();
-      window.lastDataChangeTime = persisted;
+        // Save decryption params in memory for auto-refresh
+        window.currentPassphrase = pass;
+        window.currentSalt = saltB64;
+        window.currentIterations = iterations;
+
+        // Optionally save in localStorage
+        handleRememberPassword(pass);
+
+        // Hide login, show content
+        document.getElementById('login').style.display = 'none';
+        document.getElementById('content').style.display = 'block';
+        showData(data);
+
+        // Start auto-refresh if password is saved
+        setupAutoRefresh();
+    }  catch(e) {
+        // PATCH: On decrypt failure, restore lastDataChangeTime from storage for ticking timer
+        const persisted = getPersistedLastDataChangeTime();
+        if (persisted) window.lastDataChangeTime = persisted;
+        document.getElementById('error').textContent = 'Invalid passphrase or decryption failed';
+        console.error('Decrypt error:', e);
+      }
     }
-    window.lastUploadReceivedTime = j.data.updatedAt ? Date.parse(j.data.updatedAt) : Date.now();
-    window.lastUploadType = j.data.uploadType || null;
-    window.lastSeq = (typeof j.data.sequenceNumber === "number") ? j.data.sequenceNumber : null;
-    window.lastUpdatedAt = j.data.updatedAt || null;
-
-    // Save decryption params in memory for auto-refresh
-    window.currentPassphrase = pass;
-    window.currentSalt = saltB64;
-    window.currentIterations = iterations;
-
-    // Optionally save in localStorage
-    handleRememberPassword(pass);
-
-    // Hide login, show content
-    document.getElementById('login').style.display = 'none';
-    document.getElementById('content').style.display = 'block';
-    showData(data);
-
-    // Start auto-refresh if password is saved
-    setupAutoRefresh();
-  } catch(e) {
-    // PATCH: On decrypt failure, restore lastDataChangeTime from storage for ticking timer
-    const persisted = getPersistedLastDataChangeTime();
-    if (persisted) window.lastDataChangeTime = persisted;
-    document.getElementById('error').textContent = 'Invalid passphrase or decryption failed';
-    console.error('Decrypt error:', e);
-  }
-}
 
     async function decryptData(encData, pass, saltB64, iters) {
       const enc = new TextEncoder();
@@ -417,6 +416,8 @@ function formatDurationHMS(milliseconds) {
 }
 
 // Enhanced login functionality
+
+// Enhanced login functionality
 document.addEventListener('DOMContentLoaded', function() {
   const passInput = document.getElementById('pass');
   const toggleBtn = document.getElementById('togglePassword');
@@ -482,13 +483,13 @@ function setupAutoRefresh() {
         .then(j => {
           window.lastUploadReceivedTime = window.lastUploadReceivedTime || Date.now();
 
-        // console.log("[DEBUG] AutoRefresh: Fetched blob meta:", {
-        //  seq: (j.data && typeof j.data.sequenceNumber === 'number') ? j.data.sequenceNumber : null,
-        //  updatedAt: (j.data && j.data.updatedAt) ? j.data.updatedAt : null,
-        //  uploadType: (j.data && j.data.uploadType) ? j.data.uploadType : null,
-        //  monitorStartTime: j.data?.monitorStartTime,
-        //  now: new Date().toISOString()
-        //});
+          console.log("[DEBUG] AutoRefresh: Fetched blob meta:", {
+            seq: (j.data && typeof j.data.sequenceNumber === 'number') ? j.data.sequenceNumber : null,
+            updatedAt: (j.data && j.data.updatedAt) ? j.data.updatedAt : null,
+            uploadType: (j.data && j.data.uploadType) ? j.data.uploadType : null,
+            monitorStartTime: j.data?.monitorStartTime,
+            now: new Date().toISOString()
+          });
 
           // Update timers from blob meta
           const seq = (j.data && typeof j.data.sequenceNumber === 'number') ? j.data.sequenceNumber : null;
@@ -550,7 +551,7 @@ function setupAutoRefresh() {
             window.lastUploadReceivedTime = updAt ? Date.parse(updAt) : 0;
 
           } else if (changed) {
-       //   console.log("[DEBUG] AutoRefresh: Detected new uploadType:", upType, "prev:", prevLastType, "at", new Date().toISOString());
+            console.log("[DEBUG] AutoRefresh: Detected new uploadType:", upType, "prev:", prevLastType, "at", new Date().toISOString());
             // Subsequent loads: only bump when truly new
             window['lastSeq'] = seq;
             window['lastUpdatedAt'] = updAt;
@@ -636,10 +637,10 @@ function setupAutoRefresh() {
 
   // Then poll every 15 seconds
   window.dashboardRefreshInterval = setInterval(doPoll, 15000);
-  }
+}
 
-  // Update monitor status display every second
-  function updateMonitorStatus() {
+// Update monitor status display every second
+function updateMonitorStatus() {
   const content = document.getElementById('content');
   if (!content || content.style.display === 'none') {
     return;
@@ -694,15 +695,14 @@ function setupAutoRefresh() {
   if (monitorStatusEl) {
     monitorStatusEl.textContent = statusText;
   }
-  
-// console.log("[DEBUG] updateMonitorStatus:", {
-//   dotColor,
-//   statusText,
-//   monitorStartTime: window.monitorStartTime,
-//   lastUploadType: window.lastUploadType,
-//   commHealthMs: window.lastUploadReceivedTime ? (Date.now() - window.lastUploadReceivedTime) : 999999999,
-//   now: new Date().toISOString()
-// });
+  console.log("[DEBUG] updateMonitorStatus:", {
+    dotColor,
+    statusText,
+    monitorStartTime: window.monitorStartTime,
+    lastUploadType: window.lastUploadType,
+    commHealthMs: window.lastUploadReceivedTime ? (Date.now() - window.lastUploadReceivedTime) : 999999999,
+    now: new Date().toISOString()
+  });
 }
 
 // Start timer update interval

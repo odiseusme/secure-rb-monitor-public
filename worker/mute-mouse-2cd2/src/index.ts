@@ -30,11 +30,11 @@ app.get("/health", (c) =>
 
 // === API routes (call each endpoint class's handle() method) ===
 
-// app.post("/api/create-user", async (c) => {
-//   const endpoint = new CreateUser();
-//   return endpoint.handle(c);
-// });
-// [legacy/unused: commented out during public cleanup]
+// Create a user (legacy helper; you can keep or remove if not needed)
+app.post("/api/create-user", async (c) => {
+  const endpoint = new CreateUser();
+  return endpoint.handle(c);
+});
 
 // Update encrypted data blob (writer)
 app.post("/api/update", async (c) => {

@@ -21,6 +21,12 @@ body {
    ------------------------------ */
 .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
 .header { text-align: center; margin-bottom: 30px; color: white; }
+/*.header h1 {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}*/
+
 .header h1 {
   font-size: 2.5rem;
   font-weight: 300;  /* Light weight */
@@ -351,51 +357,88 @@ body {
     box-shadow: 0 8px 20px rgba(0,0,0,0.12);
 }
 
-
-/* Consolidated status-dot styles */
 .status-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  display: inline-block;
-  transition: all 0.3s ease;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: inline-block;
+    transition: all 0.3s ease;
 }
+
 .status-dot.green {
-  background: #10B981;
+    background: #10B981;
 }
+
 .status-dot.orange {
-  background: #F59E0B;
+    background: #F59E0B;
 }
+
 .status-dot.red {
-  background: #EF4444;
+    background: #EF4444;
+/*    box-shadow: 0 0 12px rgba(239, 68, 68, 0.8);*/
+/*    animation: pulse-red 2s infinite;*/
 }
+
 @keyframes pulse-red {
-  0%, 100% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.8); }
-  50% { box-shadow: 0 0 20px rgba(239, 68, 68, 1); }
+    0%, 100% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.8); }
+    50% { box-shadow: 0 0 20px rgba(239, 68, 68, 1); }
 }
+
 .monitor-status-line .separator {
-  color: #94a3b8;
-  font-weight: 400;
-  margin: 0 4px;
+    color: #CBD5E1;
+    font-weight: 400;
+    margin: 0 6px;
 }
+
 .monitor-status-line #timerA,
 .monitor-status-line #timerB {
-  font-family: 'Monaco', 'Courier New', monospace;
-  font-weight: 600;
-  font-size: 1.1rem;
-  color: #1F2937;
-  letter-spacing: 0.5px;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: #10B981;
+    letter-spacing: 0.5px;
 }
+
 @media (max-width: 768px) {
-  .monitor-status-line {
-    font-size: 0.9rem;
-    padding: 12px 16px;
-    gap: 8px;
-  }
-  .monitor-status-line #timerA,
-  .monitor-status-line #timerB {
-    font-size: 0.95rem;
-  }
+    .monitor-status-line {
+        font-size: 0.9rem;
+        padding: 12px 16px;
+        gap: 8px;
+    }
+    .monitor-status-line #timerA,
+    .monitor-status-line #timerB {
+        font-size: 0.95rem;
+    }
+}
+.status-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.status-dot.green {
+    background: #10B981;
+}
+
+.status-dot.orange {
+    background: #F59E0B;
+}
+
+.status-dot.red {
+    background: #EF4444;
+}
+
+.monitor-status-line .separator {
+    color: #94a3b8;
+    margin: 0 4px;
+}
+
+.monitor-status-line #timerA,
+.monitor-status-line #timerB {
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-weight: 600;
+    color: #1F2937;
 }
 
 .monitor-status-group {
