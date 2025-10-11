@@ -33,5 +33,17 @@ WRITE_TOKEN=ePEIHtbuXd4n56Bw41Mefoa7ZZhnkNVOgrp99hGMmHyjkCmGqbGlRD1tfGpXEQVC \
 DASH_PASSPHRASE=TestPassphrase123! \
 DASH_SALT_B64=gHoMAHheTY0DGIQSFyyKvGBbw2Tdvuyo \
 
+11/10/2025
+Public ID:     xfbPdNvTRARns9bHFNTKaqVF1jnqVBVE
+Write token:   1JURBLj1OLk0TUHrK3V44YTRkya9yRkMlcgjsqGki3f70IKC7sxDNO8ODxf9hSvz
+Salt (b64):    ohhN90DX4mKXOoW3Ksm7hS4U0ltBhXoy
+Dashboard URL: http://localhost:38472/d/xfbPdNvTRARns9bHFNTKaqVF1jnqVBVE
+
+BASE_URL=http://localhost:38472 \
+WRITE_TOKEN=1JURBLj1OLk0TUHrK3V44YTRkya9yRkMlcgjsqGki3f70IKC7sxDNO8ODxf9hSvz \
+DASH_PASSPHRASE=TestPassphrase123! \
+DASH_SALT_B64=ohhN90DX4mKXOoW3Ksm7hS4U0ltBhXoy \
+
+
 http://localhost:38472/d/xKSqIkJjjXXY3jh1VdIxfGwi2W4WoGhj?
 

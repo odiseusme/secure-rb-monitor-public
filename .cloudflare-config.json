@@ -1,10 +1,12 @@
 {
-  "endpoint": "https://api.cloudflare.com/client/v4",
-  "accountId": "your-cloudflare-account-id",
-  "namespaceId": "test-namespace-id",
-  "keyName": "rosen-bridge-status",
-  "encryption": {
-    "algorithm": "aes-256-gcm",
-    "keyDerivation": "pbkdf2"
-  }
+  "baseUrl": "http://localhost:38472",
+  "publicId": "xfbPdNvTRARns9bHFNTKaqVF1jnqVBVE",
+  "writeToken": "1JURBLj1OLk0TUHrK3V44YTRkya9yRkMlcgjsqGki3f70IKC7sxDNO8ODxf9hSvz",
+  "salt": "ohhN90DX4mKXOoW3Ksm7hS4U0ltBhXoy",
+  "kdfParams": {
+    "algorithm": "PBKDF2",
+    "hash": "SHA256",
+    "iterations": 100000
+  },
+  "dashboardUrl": "http://localhost:38472/d/xfbPdNvTRARns9bHFNTKaqVF1jnqVBVE"
 }
