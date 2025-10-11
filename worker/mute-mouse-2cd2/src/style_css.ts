@@ -21,11 +21,22 @@ body {
    ------------------------------ */
 .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
 .header { text-align: center; margin-bottom: 30px; color: white; }
-.header h1 {
+/*.header h1 {
     font-size: 2.5rem;
     margin-bottom: 10px;
     text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}*/
+
+.header h1 {
+  font-size: 2.5rem;
+  font-weight: 300;  /* Light weight */
+  letter-spacing: 0.05em;
+  margin-bottom: 1.6rem;
+  text-align: center;
+  color: white;
 }
+
+
 
 /* ------------------------------
    Summary Section

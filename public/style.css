@@ -20,10 +20,21 @@ body {
    ------------------------------ */
 .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
 .header { text-align: center; margin-bottom: 30px; color: white; }
-.header h1 {
+/*.header h1 {
     font-size: 2.5rem;
-    margin-bottom: 10px;
+    margin-bottom: 6px;
     text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}*/
+
+.header h1 {
+  font-size: 3.5rem;
+  font-weight: 400;  /* Normal weight */
+  letter-spacing: 0.03em;
+  margin-bottom: 1rem;
+  text-align: center;
+  color: white;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  text-transform: uppercase;
 }
 
 /* ------------------------------
@@ -264,8 +275,8 @@ body {
 /* ------------------------------
    Last Update & Status Messages
    ------------------------------ */
-.last-update { text-align: center; color: white; margin-top: 30px; font-size: 0.9rem; }
-.loading { text-align: center; color: white; font-size: 1.2rem; margin-top: 50px; }
+.last-update { text-align: center; color: white; margin-top: 20px; font-size: 1.4rem; }
+.loading { text-align: center; color: white; font-size: 1.4rem; margin-top: 50px; }
 .error { background: #FEF2F2; color: #991B1B; padding: 20px; border-radius: 10px; margin: 20px 0; border-left: 4px solid #EF4444; }
 
 /* ------------------------------
@@ -273,7 +284,7 @@ body {
    ------------------------------ */
 @media (max-width: 768px) {
     .container { padding: 15px; }
-    .header h1 { font-size: 1.5rem; margin-bottom: 10px; text-shadow: 1px 1px 2px rgba(0,0,0,0.2); }
+    .header h1 { font-size: 1.8rem; margin-bottom: 10px; text-shadow: 1px 1px 2px rgba(0,0,0,0.2); }
     .watchers-grid { grid-template-columns: 1fr; }
     .summary { grid-template-columns: repeat(2, 1fr); }
 }
@@ -315,8 +326,8 @@ body {
 .last-updated-top {
     text-align: center;
     margin: 10px 0;
-    font-size: 1.6rem;
-    font-weight: 600;
+    font-size: 1.7rem;
+    font-weight: 400;
     color: #fff;
 }
 .last-updated-top.stale { color: #EF4444; font-weight: 700; }

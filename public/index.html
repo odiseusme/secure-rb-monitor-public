@@ -16,7 +16,7 @@
 <body>
   <div class="container">
     <div class="header">
-      <h1 id="pageTitle">Rosen Bridge Monitor</h1>
+      <h1 id="pageTitle">RB Watchers Monitor</h1>
       <div id="lastUpdatedTop" class="last-updated-top">Last updated: --</div>
     </div>
 
@@ -287,7 +287,7 @@ function renderSummary(summary) {
         if (data.lastUpdate) {
           const t = new Date(data.lastUpdate);
           const el = document.getElementById('lastUpdatedTop');
-          el.textContent = `Last updated: ${t.toLocaleTimeString()}`;
+          el.textContent = `Last Data Update: ${t.toLocaleTimeString()}`;
           const ageSeconds = (Date.now() - t.getTime()) / 1000;
           if (ageSeconds > 30) el.classList.add('stale'); else el.classList.remove('stale');
         }

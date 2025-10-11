@@ -16,7 +16,7 @@ export const DASHBOARD_HTML = `
 <body>
   <div class="container">
     <div class="header">
-      <h1 id="pageTitle">Rosen Bridge Watchers Monitor</h1>
+      <h1 id="pageTitle">Rosen Bridge WATCHERS MONITOR</h1>
     </div>
 
 <div id="login" class="login">
