@@ -29,6 +29,7 @@ NC='\033[0m'
 # Configuration
 DEFAULT_BASE_URL="http://localhost:38472"
 BASE_URL="${BASE_URL:-$DEFAULT_BASE_URL}"
+CONFIG_FILE=".cloudflare-config.json"
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}   Rosen Bridge Monitor Registration${NC}"
@@ -43,6 +44,59 @@ if ! curl -s "$BASE_URL/health" > /dev/null 2>&1; then
   echo "  cd worker/mute-mouse-2cd2"
   echo "  npm exec wrangler -- dev --port 38472 --local"
   exit 1
+fi
+
+# Check for existing configuration
+if [ -f "$CONFIG_FILE" ]; then
+  EXISTING_PUBLIC_ID=$(jq -r '.publicId' "$CONFIG_FILE" 2>/dev/null || echo "unknown")
+  EXISTING_DASHBOARD=$(jq -r '.dashboardUrl' "$CONFIG_FILE" 2>/dev/null || echo "unknown")
+  
+  echo -e "${YELLOW}[INFO]${NC} Found existing user configuration"
+  echo ""
+  echo "Existing User ID: $EXISTING_PUBLIC_ID"
+  echo "Dashboard URL: $EXISTING_DASHBOARD"
+  echo ""
+  echo "What would you like to do?"
+  echo "  1) Use existing user (show credentials)"
+  echo "  2) Register NEW user (creates fresh credentials)"
+  echo ""
+  read -p "Choice (1/2): " user_choice
+  echo ""
+  
+  if [ "$user_choice" = "1" ]; then
+    # Show existing credentials
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "${GREEN}   Existing User Credentials${NC}"
+    echo -e "${GREEN}========================================${NC}"
+    echo ""
+    
+    PUBLIC_ID=$(jq -r '.publicId' "$CONFIG_FILE")
+    WRITE_TOKEN=$(jq -r '.writeToken' "$CONFIG_FILE")
+    SALT=$(jq -r '.salt' "$CONFIG_FILE")
+    DASHBOARD_URL=$(jq -r '.dashboardUrl' "$CONFIG_FILE")
+    
+    echo -e "${BLUE}Dashboard URL:${NC}"
+    echo "  $DASHBOARD_URL"
+    echo ""
+    echo -e "${BLUE}User ID:${NC} $PUBLIC_ID"
+    echo ""
+    echo -e "${BLUE}To start monitoring:${NC}"
+    echo ""
+    echo -e "${YELLOW}BASE_URL=$BASE_URL \\"
+    echo "WRITE_TOKEN=$WRITE_TOKEN \\"
+    echo "DASH_PASSPHRASE=<your-passphrase> \\"
+    echo "DASH_SALT_B64=$SALT \\"
+    echo -e "node cloudflare-sync.js${NC}"
+    echo ""
+    echo -e "${GREEN}✅ Credentials displayed${NC}"
+    exit 0
+  fi
+  
+  # User chose option 2 - register new user
+  REGISTER_NEW_USER=true
+else
+  # No existing config
+  REGISTER_NEW_USER=true
 fi
 
 # Step 1: Create or get invitation code
@@ -110,27 +164,34 @@ else
 fi
 
 # Step 2: Register user
-echo -e "${BLUE}[STEP 2/3]${NC} Registering user..."
+echo -e "${BLUE}[STEP 2/3]${NC} Registering new user..."
 echo ""
 
 # Auto-answer the setup script prompts
-export INVITATION_CODE
-BASE_URL="$BASE_URL" node setup-cloudflare.js <<EOF
+if [ "$REGISTER_NEW_USER" = true ]; then
+  # Registering new user - answer 'y' to create new registration
+  BASE_URL="$BASE_URL" node setup-cloudflare.js <<EOF
 y
 $INVITATION_CODE
 EOF
+else
+  # First time registration
+  BASE_URL="$BASE_URL" node setup-cloudflare.js <<EOF
+$INVITATION_CODE
+EOF
+fi
 
 # Check if registration succeeded
-if [ ! -f ".cloudflare-config.json" ]; then
+if [ ! -f "$CONFIG_FILE" ]; then
   echo -e "${RED}[ERROR]${NC} Registration failed - config file not created"
   exit 1
 fi
 
 # Extract credentials
-PUBLIC_ID=$(jq -r '.publicId' .cloudflare-config.json)
-WRITE_TOKEN=$(jq -r '.writeToken' .cloudflare-config.json)
-SALT=$(jq -r '.salt' .cloudflare-config.json)
-DASHBOARD_URL=$(jq -r '.dashboardUrl' .cloudflare-config.json)
+PUBLIC_ID=$(jq -r '.publicId' "$CONFIG_FILE")
+WRITE_TOKEN=$(jq -r '.writeToken' "$CONFIG_FILE")
+SALT=$(jq -r '.salt' "$CONFIG_FILE")
+DASHBOARD_URL=$(jq -r '.dashboardUrl' "$CONFIG_FILE")
 
 echo ""
 echo -e "${GREEN}========================================${NC}"

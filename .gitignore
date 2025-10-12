@@ -30,3 +30,6 @@ museum/nano poll-all-services.sh
 museum/
 .last-sync-hash
 .cf-sync-state.json
+start-monitoring-*.sh
+*.BAK.*
+.wranglerignore
