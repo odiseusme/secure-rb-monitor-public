@@ -636,7 +636,7 @@ function setupAutoRefresh() {
   doPoll();
 
   // Then poll every 15 seconds
-  window.dashboardRefreshInterval = setInterval(doPoll, 15000);
+  window.dashboardRefreshInterval = setInterval(doPoll, 60000);
 }
 
 // Update monitor status display every second

@@ -1,4 +1,4 @@
-1. Go here: you@OritsPC:~/projects/secure-rb-monitor-public/worker/mute-mouse-2cd2$
+1. Go here: ~/projects/secure-rb-monitor-public/worker/mute-mouse-2cd2$
 and Create new invitation:
 curl -X POST http://localhost:38472/api/admin/create-invite \
   -H "x-admin-key: dev-admin-key-123" \

@@ -46,7 +46,7 @@ export class GetBlob extends OpenAPIRoute {
         description: "User or data not found",
       },
       "429": {
-        description: "Too many requests",
+        description: "Too many requests (currently disabled)",
       },
     },
   };
@@ -59,13 +59,17 @@ export class GetBlob extends OpenAPIRoute {
         return c.json({ error: "Invalid public ID" }, 400);
       }
 
-      // Get user metadata first (needed for both rate limit and response)
+      // Get user metadata
       const userDataRaw = await c.env.USERS_KV.get(`user:${publicId}`);
       if (!userDataRaw) {
         return c.json({ error: "User not found" }, 404);
       }
       const userData = JSON.parse(userDataRaw);
 
+      /* RATE LIMITING DISABLED FOR PUBLIC RELEASE v1.0
+       * Can be re-enabled post-release if needed
+       * See complete_project_docs.md for instructions
+       * 
       // Rate limiting for reads
       const rateLimitKey = `rate:${publicId}`;
       const rateLimitData = await c.env.USERS_KV.get(rateLimitKey);
@@ -91,7 +95,7 @@ export class GetBlob extends OpenAPIRoute {
         await c.env.USERS_KV.put(rateLimitKey, JSON.stringify(rateLimit), { expirationTtl: 3600 });
       }
 
-      // Check if rate limit exceeded (allow exactly 30 requests: 0-29)
+      // Check if rate limit exceeded
       if (rateLimit.reads >= 30) {
         userData.rateLimitViolations = (userData.rateLimitViolations || 0) + 1;
         await c.env.USERS_KV.put(`user:${publicId}`, JSON.stringify(userData));
@@ -101,8 +105,9 @@ export class GetBlob extends OpenAPIRoute {
       // Increment counter after checking limit
       rateLimit.reads++;
       await c.env.USERS_KV.put(rateLimitKey, JSON.stringify(rateLimit), { expirationTtl: 3600 });
+      */
 
-      // Track user activity
+      // Track user activity (keep this for admin stats)
       userData.totalRequests = (userData.totalRequests || 0) + 1;
       userData.lastActivity = new Date().toISOString();
       await c.env.USERS_KV.put(`user:${publicId}`, JSON.stringify(userData));
