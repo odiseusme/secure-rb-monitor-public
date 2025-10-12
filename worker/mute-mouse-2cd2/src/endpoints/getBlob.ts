@@ -59,63 +59,55 @@ export class GetBlob extends OpenAPIRoute {
         return c.json({ error: "Invalid public ID" }, 400);
       }
 
-// Rate limiting for reads
-const rateLimitKey = `rate:${publicId}`;
-const rateLimitData = await c.env.USERS_KV.get(rateLimitKey);
-
-let rateLimit;
-if (rateLimitData) {
-  rateLimit = JSON.parse(rateLimitData);
-} else {
-  // Initialize rate limit counter on first request
-  rateLimit = {
-    reads: 0,
-    lastReset: new Date().toISOString()
-  };
-}
-
-const now = new Date();
-const lastReset = new Date(rateLimit.lastReset);
-const hoursSinceReset = (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60);
-
-// Reset counters if more than an hour has passed
-if (hoursSinceReset >= 1) {
-  rateLimit.reads = 0;
-  rateLimit.lastReset = now.toISOString();
-}
-
-// Check if rate limit exceeded BEFORE incrementing
-if (rateLimit.reads >= 30) { // 30 reads per hour limit
-  // Track rate limit violation before returning error
-  const userDataRaw = await c.env.USERS_KV.get(`user:${publicId}`);
-  if (userDataRaw) {
-    const userData = JSON.parse(userDataRaw);
-    userData.rateLimitViolations = (userData.rateLimitViolations || 0) + 1;
-    await c.env.USERS_KV.put(`user:${publicId}`, JSON.stringify(userData));
-  }
-  return c.json({ error: "Rate limit exceeded" }, 429);
-}
-
-// Increment counter AFTER checking limit
-rateLimit.reads++;
-await c.env.USERS_KV.put(rateLimitKey, JSON.stringify(rateLimit), { expirationTtl: 3600 });
-
-      // Get user metadata
+      // Get user metadata first (needed for both rate limit and response)
       const userDataRaw = await c.env.USERS_KV.get(`user:${publicId}`);
       if (!userDataRaw) {
         return c.json({ error: "User not found" }, 404);
       }
-
       const userData = JSON.parse(userDataRaw);
 
-      // Track user activity for spam detection
+      // Rate limiting for reads
+      const rateLimitKey = `rate:${publicId}`;
+      const rateLimitData = await c.env.USERS_KV.get(rateLimitKey);
+
+      let rateLimit;
+      if (rateLimitData) {
+        rateLimit = JSON.parse(rateLimitData);
+      } else {
+        rateLimit = {
+          reads: 0,
+          lastReset: new Date().toISOString()
+        };
+      }
+
+      const now = new Date();
+      const lastReset = new Date(rateLimit.lastReset);
+      const hoursSinceReset = (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60);
+
+      // Reset counters if more than an hour has passed
+      if (hoursSinceReset >= 1) {
+        rateLimit.reads = 0;
+        rateLimit.lastReset = now.toISOString();
+        await c.env.USERS_KV.put(rateLimitKey, JSON.stringify(rateLimit), { expirationTtl: 3600 });
+      }
+
+      // Check if rate limit exceeded (allow exactly 30 requests: 0-29)
+      if (rateLimit.reads >= 30) {
+        userData.rateLimitViolations = (userData.rateLimitViolations || 0) + 1;
+        await c.env.USERS_KV.put(`user:${publicId}`, JSON.stringify(userData));
+        return c.json({ error: "Rate limit exceeded" }, 429);
+      }
+
+      // Increment counter after checking limit
+      rateLimit.reads++;
+      await c.env.USERS_KV.put(rateLimitKey, JSON.stringify(rateLimit), { expirationTtl: 3600 });
+
+      // Track user activity
       userData.totalRequests = (userData.totalRequests || 0) + 1;
       userData.lastActivity = new Date().toISOString();
-
-      // Update user activity tracking
       await c.env.USERS_KV.put(`user:${publicId}`, JSON.stringify(userData));
 
-      // Get encrypted blob (if exists)
+      // Get encrypted blob
       const blobKey = `blob:${publicId}`;
       const blobDataRaw = await c.env.USERS_KV.get(blobKey);
       
@@ -124,8 +116,7 @@ await c.env.USERS_KV.put(rateLimitKey, JSON.stringify(rateLimit), { expirationTt
         blobData = JSON.parse(blobDataRaw);
       }
 
-      // Return user info and encrypted blob
-      const response = {
+      return c.json({
         success: true,
         data: blobData,
         userInfo: {
@@ -133,9 +124,7 @@ await c.env.USERS_KV.put(rateLimitKey, JSON.stringify(rateLimit), { expirationTt
           salt: userData.salt,
           kdfParams: userData.kdfParams,
         },
-      };
-
-      return c.json(response);
+      });
 
     } catch (error) {
       console.error("Error retrieving blob:", error);
