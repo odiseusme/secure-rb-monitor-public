@@ -33,3 +33,5 @@ museum/
 start-monitoring-*.sh
 *.BAK.*
 .wranglerignore
+.cloudflare-config.json
+start-monitoring*.sh

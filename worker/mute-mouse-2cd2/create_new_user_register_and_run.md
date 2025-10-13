@@ -1,18 +1,15 @@
-1. Go here: ~/projects/secure-rb-monitor-public/worker/mute-mouse-2cd2$
+ADMIN work
+Go here: ~/projects/secure-rb-monitor-public/worker/mute-mouse-2cd2$
 and Create new invitation:
 curl -X POST http://localhost:38472/api/admin/create-invite \
   -H "x-admin-key: dev-admin-key-123" \
   -H "Content-Type: application/json" \
   -d '{"count": 1, "expiresInDays": 30}'
 
-2. Go here: cd ~/projects/secure-rb-monitor-public
+1. Open terminal in: cd ~/projects/secure-rb-monitor-public
 
-3. Now register the user:
+2. Register the user:
 BASE_URL=http://localhost:38472 node setup-cloudflare.js
-
-4. Use the invitation code from the previous step: INVITE-8Q8G7H-TYL9U2
-After registration, you'll get the new publicId and dashboard URL for port 38472. 
-
 
 Found existing configuration.
 Do you want to create a new registration? (y/N): y

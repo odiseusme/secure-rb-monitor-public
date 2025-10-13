@@ -331,6 +331,18 @@ main() {
         break
       fi
     done
+
+    # --- Cloudflare sync setup prompt ---
+    while true; do
+      read -r -p "Would you like to set up encrypted Cloudflare sync? [y/N] " cf_reply
+      cf_reply="${cf_reply,,}"
+      if [[ "$cf_reply" == "y" || "$cf_reply" == "yes" ]]; then
+        ./scripts/register-user.sh
+        break
+      else
+        break
+      fi
+    done
   fi
 }
 
