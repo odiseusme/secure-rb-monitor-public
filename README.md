@@ -1,426 +1,587 @@
+# Secure Rosen Bridge Monitor
 
-# Secure RB Monitor (Public Baseline)
+Zero-knowledge, end-to-end encrypted monitoring for Rosen Bridge watchers. Monitor your nodes locally or remotely with a simple, mobile-friendly dashboard – no privileged access required.
 
-Monitor Rosen Bridge Watchers securely with a simple, mobile-friendly web UI and no privileged access. Features zero-knowledge, end-to-end encrypted remote monitoring via Cloudflare Worker or local Docker deployment.
+**Key Features:**
+- 🔒 **Zero-knowledge encryption** – server never sees your data or passphrase
+- 🌐 **Remote monitoring** – access from anywhere via Cloudflare Worker
+- 🔐 **Invitation-based access** – admin-controlled user registration
+- 🐳 **No privileged Docker access** – API-only monitoring, read-only containers
+- 📱 **Mobile-responsive** – monitor from phone, tablet, or desktop
+- ⚡ **Automatic discovery** – detects watchers and configures networks
 
-A lightweight monitoring and status publishing component for the Watchers of the Rosen Bridge infrastructure.
+> **Status:** v1.0 – Production ready with security-hardened architecture  
+> See [`CHANGELOG.md`](./CHANGELOG.md) for version history and upgrade notes.
 
-
-_Current focus:_
-- Zero-knowledge, end-to-end encrypted monitoring (AES-GCM, PBKDF2)
-- Minimal web status UI (`public/` assets + `static-server.js`)
-- Secure API-based monitoring (no privileged Docker access required)
-- Cloudflare Worker backend for remote dashboard access
-- Invitation-based user registration and onboarding
-- Automatic watcher discovery and network configuration
-- Simple bootstrap scripts for local/container usage
-
-> Status: v0.4 (Security-hardened API-only architecture). Expect rapid iteration; APIs & structure may evolve.
-
-## Table of Contents
-- [Purpose](#purpose)
-- [Security Architecture](#security-architecture)
-- [Non-Goals (Now)](#non-goals-now)
-- [Quick Start](#quick-start)
-  - [Prerequisites](#prerequisites)
-  - [Normal Workflow (3 Steps)](#normal-workflow-3-steps)
-  - [Advanced Setup Options](#advanced-setup-options)
-  - [Alternative Deployment Methods](#alternative-deployment-methods)
-  - [Maintenance Commands](#maintenance-commands)
-  - [Optional: Persistence & Custom Directories](#optional-persistence--custom-directories)
-- [Configuration](#configuration)
-- [Architecture Overview](#architecture-overview)
-  - [Core Data Flow](#core-data-flow)
-  - [Scripts](#scripts)
-  - [Docker](#docker)
-  - [Network Architecture](#network-architecture)
-- [Project Layout](#project-layout)
-- [Development Workflow](#development-workflow)
-- [🛡️ Security Features](#🛡️-security-features)
-- [Contributing](#contributing)
-- [License](#license)
-
-## Purpose
-Openly reviewable, security-hardened, zero-knowledge monitoring solution for the Rosen Bridge ecosystem. Enables:
-- Local or containerized deployment without privileged access
-- Remote dashboard access via Cloudflare Worker (end-to-end encrypted)
-- Invitation-based user onboarding (admin-controlled)
-- Automatic discovery and monitoring of watcher services
-- Secure API-based data collection (no Docker socket required)
-- Hosts a simple, mobile-responsive web dashboard for status viewing
-
-## Security & Privacy Architecture
-
-**Zero-Knowledge, End-to-End Encryption:**
-- All monitoring data is encrypted client-side (AES-GCM, PBKDF2-SHA256)
-- Server (Cloudflare Worker or local) never sees decrypted data or user passphrases
-- Decryption happens only in your browser
-
-**Key security improvements:**
-- No Docker socket access required (eliminates privileged container access)
-- API-only monitoring (direct HTTP polling of watcher endpoints)
-- Automatic network discovery (safe attachment to watcher networks only)
-- Read-only container filesystem (immutable runtime environment)
-- Minimal container capabilities (drops all unnecessary Linux capabilities)
-
-The monitor operates entirely through network API calls, requiring no host system access or privileged Docker operations. For remote deployments, all data is encrypted before upload and decrypted only in the browser.
-
-## Non-Goals (Now)
-- Production-hardening (HA, clustering)
-- Advanced auth / RBAC
-- Observability (structured metrics/log shipping)
-- Comprehensive test suite (placeholder only)
-
+---
 
 ## Quick Start
 
+Choose your deployment path based on your needs:
 
-### Prerequisites
-- Node.js (LTS) OR Docker
-- Docker Compose (for container deployment)
-- Running Rosen Bridge watcher containers
-- (Optional) `qrencode` for QR code output
-- (Optional) Cloudflare account for remote dashboard (see below)
+### Path A – Local Monitoring Only *(Simplest)*
 
+Monitor watchers on your local machine with a web dashboard.  
+**No Cloudflare account needed.**
 
-### Normal Workflow (3 Steps)
-
-**For most users (local or Docker):**
-
+**1. Clone and setup:**
 ```bash
-# 1. Clone
 git clone https://github.com/odiseusme/secure-rb-monitor-public.git
 cd secure-rb-monitor-public
-
-# 2. Auto-discover and configure
 ./scripts/prepare_build.sh
+```
 
-# 3. Build and run (background)
+**2. Start monitoring:**
+```bash
 docker compose up -d --build
 ```
 
+**3. Access dashboard:**
+- Open: `http://localhost:8080` (or the URL shown by setup script)
+- *(If 8080 is busy, the script automatically selects a free port and prints it.)*
+- View your watcher status in real-time
 
+**That's it!** Your watchers are now being monitored locally.
 
-**Access:**
-- For Docker deployment, the script auto-selects an available port and prints the access URL (normally `http://localhost:${HOST_PORT:-8080}/`).
-- For Cloudflare Worker/local development, the default port is `38472` (e.g., `http://localhost:38472/`).
-
-**Note:** The two environments use different default ports by design. You can change these via the `HOST_PORT` variable (Docker) or `BASE_URL` (Cloudflare/local dev) as needed. Be aware of which environment you are using when accessing the dashboard or configuring scripts.
-
-The setup script automatically:
-- Discovers all running watcher containers
-- Generates `config.json` with watcher API endpoints  
-- Creates `docker-compose.override.yml` for network access
-- Selects an available port and updates `.env`
-- Displays access URLs
+💡 **Tip:** You can upgrade to Path B (remote monitoring) anytime without reinstalling.
 
 ---
 
+### Path B – Remote Monitoring with Cloudflare *(Encrypted)*
 
-### Remote Cloudflare Worker Deployment
+Monitor from anywhere with end-to-end encrypted remote access.
 
-For secure remote monitoring, deploy the Cloudflare Worker backend and use the invitation-based registration system. See `cloudflare-sync.js` and `setup-cloudflare.js` for details. All data is encrypted before upload; only you can decrypt it in your browser.
+⚠️ **Important:** Only the project admin (who deploys the Worker) needs a Cloudflare account. Regular users just receive an invitation code and access their encrypted dashboard – no Cloudflare account required.
 
-### Advanced Setup Options
+**Prerequisites (Admin Only):**
+- Cloudflare account ([sign up free](https://dash.cloudflare.com/sign-up))
+- Wrangler CLI: `npm install -g wrangler`
 
-You can customize the setup script with environment variables:
-
+**1. Setup and start local monitoring:**
 ```bash
-# Bind to all interfaces (accessible from LAN)
-BIND_ALL=1 ./scripts/prepare_build.sh
-
-# Auto-open browser after setup  
-OPEN_BROWSER=1 ./scripts/prepare_build.sh
-
-# Show QR code for mobile access (requires qrencode)
-SHOW_QR=1 ./scripts/prepare_build.sh
-
-# Force regeneration of config/networks
-FORCE=1 ./scripts/prepare_build.sh
-```
-
----
-
-### Alternative Deployment Methods
-
-If you can't use Docker Compose, here are other options:
-
-#### Option A: Direct Docker Run
-```bash
-./scripts/prepare_build.sh
-export $(grep HOST_PORT .env | xargs)
-
-docker build -t rb-monitor .
-docker run -d \
-  --name rb-monitor \
-  --restart unless-stopped \
-  -p ${HOST_PORT:-8080}:8080 \
-  --network watcher_network \
-  rb-monitor
-```
-
-#### Option B: Local Node.js (Development)
-Terminal A:
-```bash
-node static-server.js
-```
-Terminal B:  
-```bash
-node status-updater.js
-```
-Access: `http://localhost:8080`
-
----
-
-### Maintenance Commands
-
-#### Adding/Removing Watchers
-When you add or remove watcher containers, regenerate the configuration:
-
-```bash
+git clone https://github.com/odiseusme/secure-rb-monitor-public.git
+cd secure-rb-monitor-public
 ./scripts/prepare_build.sh
 docker compose up -d --build
 ```
 
-The script will automatically discover new watchers and update network configurations.
-
-
-#### Manual Status Update & Encrypted Upload
+**2. Deploy Cloudflare Worker (admin only):**
 ```bash
-# Update status.json
-node write_status.js
-# Encrypt and upload to Cloudflare Worker
-node cloudflare-sync.js
+cd worker/mute-mouse-2cd2
+wrangler login
+wrangler deploy
 ```
 
-#### View Logs
-```bash
-# Live logs
-docker compose logs -f
+📝 **Save the deployed URL** shown in output – you'll need it for user registration (e.g., `https://your-worker-abc123.workers.dev`).
 
-# Recent logs
-docker compose logs --tail=50
+🛡️ **Tip:** The Worker enforces HTTPS automatically in production and ships with rate-limiting **enabled by default**. You can adjust thresholds in `src/config.ts` if needed.
+
+**3. Start the worker locally for development:**
+```bash
+# Terminal 1 – start worker
+cd worker/mute-mouse-2cd2
+npm exec wrangler -- dev --port 38472 --local
+
+# Terminal 2 – register and start encrypted sync
+cd ../..
+./scripts/register-user.sh --invite YOUR-INVITE-CODE
+DASH_PASSPHRASE='your-strong-passphrase' ./start-monitoring.sh &
 ```
 
-#### Stop/Restart
-```bash
-# Stop
-docker compose down
+**4. Access your encrypted dashboard:**
+- URL shown after registration (e.g., `https://your-worker.workers.dev/d/YOUR-USER-ID`)
+- Enter your passphrase to decrypt and view data
+- Works from any device, anywhere
 
-# Restart
-docker compose up -d --build
+**Security:** All data encrypted before upload – only you can decrypt it.
+
+---
+
+## For Admins
+
+### Deploying to Cloudflare
+
+**One-time setup:**
+```bash
+cd worker/mute-mouse-2cd2
+wrangler login
+wrangler deploy
+```
+
+**Set admin key:**
+```bash
+wrangler secret put ADMIN_API_KEY
+# Enter a strong random key when prompted
+```
+
+**Create KV namespace:**
+```bash
+wrangler kv:namespace create USERS_KV
+# Update wrangler.toml with the namespace ID
+```
+
+**Verify deployment:**
+```bash
+curl https://your-worker.workers.dev/health
+# Should return: {"status":"ok"}
 ```
 
 ---
 
-### Optional: Persistence & Custom Directories
+### Creating Invitations
+
+Generate invitation codes for new users:
 
 ```bash
-mkdir -p data logs config public
+curl -X POST https://your-worker.workers.dev/api/admin/create-invite \
+  -H "x-admin-key: YOUR_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"count": 5, "expiresInDays": 30}'
 ```
 
-These directories will be mounted as volumes for persistent data storage.
-
-
-**Next Steps:**
-- Monitor watcher health and performance
-- Set up alerts for failed watchers (see TODO.md)
-- Customize UI for your specific needs
-- Add metrics/structured logging
-- Register users and manage invitations (Cloudflare Worker)
-
----
-
-
-## User Registration & Access (Cloudflare Worker)
-
-For remote dashboards, users register via invitation codes generated by the admin. Registration and access are managed by the Cloudflare Worker backend. See `setup-cloudflare.js` and project docs for details.
-
-### Registering a user (USER-side)
-- Get `INVITE-...` from admin @odiseus_me.
-- Run: `BASE_URL=http://localhost:38472 ./scripts/register-user.sh` (or pass `--invite CODE`)
-- Enter passphrase in dashboard = same `DASH_PASSPHRASE` you use for the uploader.
-
-## Admin Management
-
-Administrators can monitor usage, manage invitations, and adjust rate limits. See `complete_project_docs.md` for complete admin documentation including usage monitoring, rate limiting controls, and user management.
-
-## Configuration
-
-The system uses automatic configuration discovery, but manual override is possible:
-
+**Response:**
 ```json
 {
-  "watchers": [
-    {"name": "watcher_3030-service-1", "url": "http://watcher_3030-service-1:3000/info"},
-    {"name": "watcher_3042-service-1", "url": "http://watcher_3042-service-1:3000/info"}
+  "success": true,
+  "invitations": [
+    {"code": "INVITE-ABC123-XYZ789", "expiresAt": "2025-11-15T10:30:00Z"}
   ]
 }
 ```
 
-Generated automatically by `prepare_build.sh` based on running containers.
+Send invitation codes securely to users (email, encrypted chat, etc.).
 
 ---
 
+### Monitoring Usage
 
-## Architecture Overview
-
-
-### Core Data Flow
-1. `prepare_build.sh` discovers watchers and configures networks
-2. `write_status.js` polls watcher APIs → writes `status.json`
-3. `cloudflare-sync.js` encrypts and uploads status to Cloudflare Worker
-4. `static-server.js` or Cloudflare Worker serves UI and status data
-
-
-### Scripts
-- `scripts/prepare_build.sh`: Auto-discovery, port selection, network setup
-- `scripts/serve_public.sh`: Static server wrapper
-- `scripts/show_monitor_url.sh`: Display access URLs
-- `cloudflare-sync.js`: Encrypts and uploads status to Cloudflare Worker
-- `setup-cloudflare.js`: Registers users via invitation codes
-
-
-### Docker
-Container features:
-- Based on `node:20-alpine`
-- Non-root user `monitor`
-- Read-only filesystem
-- No privileged access required
-- Automatic network attachment to watcher networks
-
-
-### Network Architecture
-The monitor attaches to watcher Docker networks automatically:
-- Discovers watcher containers by name pattern
-- Identifies their Docker networks
-- Generates `docker-compose.override.yml` for network access
-- Polls watcher `/info` endpoints directly over network
-
-**Security benefit:** No Docker socket access required - only network-level API communication.
-
----
-
-
-## Project Layout
-```
-.
-├── public/                # Static assets and generated status.json
-├── scripts/               # Helper scripts (discovery, setup)
-├── museum/                # Reference examples (preserved configs)
-├── status-updater.js      # Periodic orchestration
-├── write_status.js        # API-based data collection
-├── static-server.js       # Lightweight HTTP server
-├── docker-entrypoint.sh   # Simplified privilege management
-├── config.json            # Auto-generated watcher configuration
-├── docker-compose.override.yml  # Auto-generated network config
-├── docker-compose.yml
-├── Dockerfile
-└── TODO.md               # Future enhancements
+```bash
+curl https://your-worker.workers.dev/api/admin/stats \
+  -H "x-admin-key: YOUR_ADMIN_KEY"
 ```
 
+**Key metrics:**
+- Total users and activity
+- Request counts per user
+- Rate-limit violations
+- Suspicious-activity detection
+
+**Cloudflare Free Tier Limits:**
+- 100,000 requests/day
+- ≈57 users max at default polling rate
+
+See [`complete_project_docs.md`](./complete_project_docs.md) for detailed admin guidance, rate-limiting, user-management, and scaling strategies.
+
 ---
 
+## For Users
 
-## Development Workflow
-1. Install Node.js (or rely on Docker)
-2. Run `./scripts/prepare_build.sh` for automatic setup
-3. Use `docker compose up -d --build` for testing
-4. Edit code, rebuild/restart containers
-5. Re-run setup script when adding/removing watchers
+### Registration
 
-CI: GitHub Actions (baseline).
+1️⃣ **Get invitation code from admin**
+
+2️⃣ **Register:**
+```bash
+./scripts/register-user.sh --invite INVITE-YOUR-CODE-HERE
+```
+
+3️⃣ **Choose a strong passphrase:**
+- 20+ characters or 4-6 random words
+- Examples: `correct-horse-battery-staple-47` or `MyS3cur3Pass!2025`
+- ⚠️ **Critical:** System refuses weak passphrases like `TestPassphrase123!`
+- **Save it:** Use a password manager – if lost, data cannot be recovered
+
+4️⃣ **Save your credentials:**
+- Dashboard URL (shown after registration)
+- Your passphrase (never sent to server)
 
 ---
 
+### Starting and Stopping
+
+**Start everything:**
+```bash
+# 1. Start local monitor
+docker compose up -d
+
+# 2. Start Cloudflare sync (required for remote monitoring)
+DASH_PASSPHRASE='your-passphrase' ./start-monitoring.sh &
+```
+
+⚠️ **Critical:** Always set `DASH_PASSPHRASE` when starting the sync script. If omitted, encryption will use a default passphrase and your dashboard won't be able to decrypt the data.
+
+**Stop everything:**
+```bash
+# Stop Cloudflare sync
+pkill -f cloudflare-sync.js
+
+# Stop local monitor
+docker compose down
+```
+
+**Check status:**
+```bash
+# Docker container
+docker ps | grep rosen-bridge-monitor
+
+# Cloudflare sync
+ps aux | grep cloudflare-sync.js | grep -v grep
+
+# View logs
+docker compose logs -f
+```
+
+**Restart after changes:**
+```bash
+# Restart Docker
+docker compose restart
+
+# Restart Cloudflare sync (always with passphrase!)
+pkill -f cloudflare-sync.js
+DASH_PASSPHRASE='your-passphrase' ./start-monitoring.sh &
+```
+
+---
+
+### Accessing Your Dashboard
+
+**Local (Path A):**
+- URL: `http://localhost:8080` or IP shown by setup script
+- No passphrase needed (local access only)
+
+**Remote (Path B):**
+- URL: `https://your-worker.workers.dev/d/YOUR-USER-ID`
+- Enter your passphrase to decrypt
+- Works on any device with internet
+
+**Mobile access:**
+- Use QR code from setup script (if enabled)
+- Or manually enter the URL on your phone
+
+---
+
+## Advanced Configuration
+
+### Setup Script Options
+
+Customize the automatic setup:
+
+```bash
+BIND_ALL=1 ./scripts/prepare_build.sh   # LAN access
+SHOW_QR=1 ./scripts/prepare_build.sh    # Show QR for mobile
+OPEN_BROWSER=1 ./scripts/prepare_build.sh
+FORCE=1 ./scripts/prepare_build.sh      # Regenerate config
+```
+
+### Adding/Removing Watchers
+
+When watcher containers change:
+
+```bash
+./scripts/prepare_build.sh
+docker compose up -d --build
+```
+
+Auto-discovers new watchers and updates configuration.
+
+### Manual Configuration
+
+Override automatic discovery by editing `config.json`:
+
+```json
+{
+  "watchers": [
+    {
+      "name": "watcher_ergo",
+      "ui_name": "watcher_ergo-ui-1",
+      "ui_port": 3030,
+      "service_name": "watcher_ergo-service-1",
+      "service_url": "http://watcher_ergo-service-1:3000/info",
+      "network": "ergo"
+    }
+  ]
+}
+```
+
+---
+
+## Development
+
+### Local Development Setup
+
+**Install dependencies:**
+```bash
+npm install
+cd worker/mute-mouse-2cd2 && npm install
+```
+
+**Start components:**
+```bash
+# Terminal 1 – Worker
+cd worker/mute-mouse-2cd2
+npm exec wrangler -- dev --port 38472 --local
+
+# Terminal 2 – Docker monitor
+docker compose up -d --build
+
+# Terminal 3 – Cloudflare sync (optional)
+DASH_PASSPHRASE='test' ./start-monitoring.sh
+```
+
+**Make changes and test:**
+- Worker auto-reloads on changes
+- Restart Docker for container changes
+- Re-run setup script when adding watchers
+
+### CI/CD
+
+Baseline GitHub Actions workflow included. Customize for your needs.
+
+---
+
+## Architecture
+
+### System Components
+
+```
+┌─────────────────┐
+│ Docker Container│  Runs write_status.js
+│ (write_status)  │  Polls watcher APIs
+└────────┬────────┘
+         │ Generates status.json
+         ↓
+┌─────────────────┐
+│  Host Process   │  Runs cloudflare-sync.js
+│ (cloudflare-    │  Encrypts and uploads
+│  sync.js)       │  (Optional for remote)
+└────────┬────────┘
+         │ Encrypted upload
+         ↓
+┌─────────────────┐
+│ Cloudflare      │  Stores encrypted data
+│ Worker + KV     │  Serves dashboard
+└────────┬────────┘
+         │ Fetch + decrypt
+         ↓
+┌─────────────────┐
+│   Browser       │  Decrypts client-side
+│  (Dashboard)    │  Displays status
+└─────────────────┘
+```
+
+### Data Flow
+
+1. **Collection:** `write_status.js` polls watcher APIs every 30 seconds
+2. **Local Storage:** Status saved to `public/status.json`
+3. **Encryption:** `cloudflare-sync.js` encrypts with AES-GCM (PBKDF2-SHA256)
+4. **Upload:** Encrypted data sent to Cloudflare Worker
+5. **Storage:** Worker stores in KV (never sees decrypted data)
+6. **Retrieval:** Browser fetches encrypted blob
+7. **Decryption:** Client-side decryption with user passphrase
+8. **Display:** Dashboard renders watcher status
+
+### Security Model
+
+**Zero-Knowledge Architecture:**
+- Passphrase never transmitted to server
+- Server stores only encrypted blobs
+- Decryption happens entirely in browser
+- Per-user salt prevents rainbow table attacks
+
+**Encryption Specs:**
+- Algorithm: AES-GCM 256-bit
+- Key Derivation: PBKDF2-SHA256 (100,000 iterations)
+- Nonce: Random 12-byte IV per encryption
+- Authentication: Included in GCM mode
+
+---
 
 ## 🛡️ Security Features
 
-This monitor is designed with security-first principles:
+### No Privileged Access
+- ✅ No Docker socket mounting
+- ✅ API-only watcher communication
+- ✅ Read-only container filesystem
+- ✅ Minimal Linux capabilities (drops ALL, adds only SETUID/SETGID)
+- ✅ Non-root user (UID 1000)
 
-### 1. No Privileged Access Required
-- **No Docker socket mounting** - Eliminates host system access
-- **API-only communication** - Polls watcher HTTP endpoints
-- **Network-level isolation** - Only accesses watcher networks
+### Network Isolation
+- ✅ Automatic watcher network discovery
+- ✅ No host network access
+- ✅ Isolated from non-watcher networks
 
-### 2. Minimal Container Privileges
-```yaml
-cap_drop:
-  - ALL
-cap_add:
-  - SETGID
-  - SETUID
-read_only: true
-```
+### Zero-Knowledge Encryption
+- ✅ Client-side encryption/decryption only
+- ✅ Server never sees passphrases or plaintext
+- ✅ Per-user salts prevent attacks
+- ✅ Industry-standard crypto (AES-GCM, PBKDF2)
 
-### 3. Secure Network Access
-- Automatically discovers and joins only watcher networks
-- No host network access required
-- Isolated from other Docker networks
-
-### 4. Writable Volumes Only Where Needed
-```yaml
-volumes:
-  - ./data:/app/data
-  - ./logs:/app/logs
-  - ./config:/app/config
-  - ./public:/app/public
-```
-
-### 5. Automatic Configuration
-- No manual network configuration required
-- Reduces configuration errors and security gaps
-- Dynamic discovery of watcher services
-
-### 6. Error Handling
-- Gracefully handles unreachable watchers
-- Continues monitoring available services
-
-### 7. Running as Non-Root User
-
-The monitor container runs as a non-root user (UID 1000).  
-This improves security by preventing escalated permissions inside the container.
-
-**Implications:**
-- Any mounted volumes (e.g., for persistent data) should be writable by UID 1000.
-- Files created by the container will be owned by UID 1000 on the host.
-- If you encounter permission errors, check host directory ownership with:
-  ```sh
-  sudo chown -R 1000:1000 <your-folder>
-  ```
-No changes to application usage are required.- Clear error reporting in status output
-
-
-### Troubleshooting
-
-- **Watchers not discovered:** Check container naming (must end with `-service-1`).
-- **Network connection issues:** Re-run `./scripts/prepare_build.sh` to regenerate network config.
-- **Permission errors:** Container runs as non-root with minimal capabilities.
+### Secure Defaults
+- ✅ HTTPS enforced in production
+- ✅ CSP headers prevent XSS
+- ✅ Invitation-based registration
+- ✅ Rate limiting enabled by default
 
 ---
 
+## Troubleshooting
+
+### Watchers Not Discovered
+
+**Symptom:** Setup script finds 0 watchers
+
+**Solution:**
+- Ensure watcher containers are running: `docker ps`
+- Check container names end with `-ui-1` or `-service-1`
+- Verify watchers are healthy: `docker ps -a`
+
+---
+
+### Dashboard Shows "Connection Refused"
+
+**Symptom:** Cannot access dashboard URL
+
+**Solution:**
+- Check Docker container running: `docker ps | grep rosen-bridge-monitor`
+- Verify port not blocked by firewall
+- For remote access, check `BIND_ALL=1` was used in setup
+
+---
+
+### Decrypt Errors in Dashboard
+
+**Symptom:** "Cannot access property 'nonce'" or decrypt failures
+
+**Solution:**
+- Ensure `cloudflare-sync.js` is running and uploading
+- **Verify `DASH_PASSPHRASE` was set when starting the sync script**
+- Wait 60 seconds for first upload to complete
+- Check worker is running: `curl http://localhost:38472/health`
+- Verify correct passphrase in dashboard (case-sensitive, must match exactly)
+
+---
+
+### Docker Container Won't Start
+
+**Symptom:** Container exits immediately or "conflict" errors
+
+**Solution:**
+```bash
+# Remove stuck container
+docker rm -f rosen-bridge-monitor
+
+# Rebuild and restart
+docker compose up -d --build
+```
+
+---
+
+### Permission Errors
+
+**Symptom:** Cannot write to mounted volumes
+
+**Solution:**
+```bash
+# Container runs as UID 1000
+sudo chown -R 1000:1000 data/ logs/ config/ public/
+```
+
+---
+
+### Cloudflare Sync Not Uploading
+
+**Symptom:** Dashboard shows stale data
+
+**Solution:**
+- Check process running: `ps aux | grep cloudflare-sync.js`
+- **Verify `DASH_PASSPHRASE` environment variable is set**
+- Check worker URL is correct in `start-monitoring.sh`
+- Review logs for errors
+
+---
 
 ## Environment Variables
 
-**Local/Docker:**
-- `HOST_PORT`, `NODE_ENV`, etc. (see `.env`)
+### Docker Deployment
+```bash
+HOST_PORT=8080          # Dashboard port
+HOST_IP=0.0.0.0        # Bind address (0.0.0.0 for LAN access)
+DOCKER_GID=984         # Docker group ID
+NODE_ENV=production    # Environment mode
+```
 
-**Cloudflare Worker:**
-- `ADMIN_API_KEY` (admin authentication)
-- `USERS_KV` (KV namespace binding)
-- `ENVIRONMENT` ("development" or "production")
+### Cloudflare Worker
+```bash
+ADMIN_API_KEY=xxx      # Admin authentication
+USERS_KV=xxx          # KV namespace binding
+ENVIRONMENT=production # Worker environment
+```
 
-**Upload Script:**
-- `DASH_PASSPHRASE`, `DASH_SALT_B64`, `WRITE_TOKEN`, `BASE_URL`
+### Upload Script
+```bash
+BASE_URL=http://localhost:38472              # Worker URL
+WRITE_TOKEN=xxx                              # User write token
+DASH_PASSPHRASE=your-passphrase             # Encryption passphrase (REQUIRED!)
+DASH_SALT_B64=xxx                           # User salt (base64)
+```
 
-See project docs for full details and examples.
-
-## Contributing
-See `CONTRIBUTING.md` for branching, commit style, and review expectations.
-
-## License
-MIT — see `LICENSE`.
+See [`complete_project_docs.md`](./complete_project_docs.md) for comprehensive configuration details.
 
 ---
 
-> Feedback from Rosen Bridge core maintainers and security reviewers is welcome—open focused issues or PRs.
+## Project Structure
+
+```
+secure-rb-monitor-public/
+├── scripts/
+│   ├── prepare_build.sh       # Auto-setup and discovery
+│   └── register-user.sh       # User registration helper
+├── worker/
+│   └── mute-mouse-2cd2/       # Cloudflare Worker code
+│       ├── src/               # Worker endpoints
+│       └── wrangler.toml      # Worker configuration
+├── public/                    # Dashboard static files
+│   ├── index.html            # Dashboard UI
+│   ├── style.css             # Styling
+│   └── cryptoHelpers.js      # Client-side crypto
+├── cloudflare-sync.js        # Encryption & upload
+├── write_status.js           # Watcher data collection
+├── setup-cloudflare.js       # Registration script
+├── docker-compose.yml        # Container orchestration
+├── Dockerfile                # Container image
+└── config.json               # Auto-generated watcher config
+```
+
+---
+
+## Contributing
+
+We welcome contributions! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for detailed guidelines.
+
+**Security issues:** Report privately to the maintainers.
+
+---
+
+## License
+
+MIT License – see [`LICENSE`](./LICENSE) for details.
+
+---
+
+## Support
+
+- **Documentation:** [`complete_project_docs.md`](./complete_project_docs.md)
+- **Issues:** [GitHub Issues](https://github.com/odiseusme/secure-rb-monitor-public/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/odiseusme/secure-rb-monitor-public/discussions)
+
+---
+
+> **Note:** This is a community project for the Rosen Bridge ecosystem. Feedback from Rosen Bridge maintainers and security reviewers is welcome.
