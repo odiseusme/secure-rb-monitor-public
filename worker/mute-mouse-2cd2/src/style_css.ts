@@ -455,6 +455,7 @@ body {
   padding: 16px 20px;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
   font-size: 1.05rem;
   font-weight: 500;
