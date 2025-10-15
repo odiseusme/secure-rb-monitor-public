@@ -1,0 +1,11 @@
+name = "mute-mouse-2cd2"
+main = "src/index.ts"
+account_id = "ac864cfa2cdae70b94ebe6e42c3c2d4e"
+compatibility_date = "2025-10-01"
+
+[vars]
+ENVIRONMENT = "production"
+
+[[kv_namespaces]]
+binding = "USERS_KV"
+id = "a36a8f56fc644f60a58a2fa8b9270ffe"

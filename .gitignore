@@ -35,3 +35,21 @@ start-monitoring-*.sh
 .wranglerignore
 .cloudflare-config.json
 start-monitoring*.sh
+
+# --- local dev / secrets / throwaways ---
+.run/
+logs/
+dashboard-*.png
+
+# Wrangler local/dev artifacts (keep the main wrangler.toml, ignore backups/temp)
+worker/**/.dev.vars
+worker/**/wrangler.dev.log
+worker/**/wrangler.toml.BAK*
+worker/**/wrangler.toml.NEW
+
+# Local helper scripts (keep these untracked unless you want them in repo)
+scripts/monitor.sh
+scripts/monitor_control.sh
+
+# OS/editor noise
+.DS_Store
