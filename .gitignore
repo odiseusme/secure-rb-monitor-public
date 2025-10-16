@@ -56,3 +56,6 @@ scripts/monitor_control.sh
 
 # ignore single-var dev file
 worker/mute-mouse-2cd2/.dev.var
+
+# allow main launcher
+!start-monitoring.sh
