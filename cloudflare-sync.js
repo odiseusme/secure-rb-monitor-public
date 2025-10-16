@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+require("./passphrase-guard").ensure();
 /**
  * Cloudflare Sync Service for Rosen Bridge Monitor
  * Watches public/status.json and uploads to Cloudflare only when content changes
