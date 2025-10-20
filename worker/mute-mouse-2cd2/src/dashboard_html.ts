@@ -80,11 +80,11 @@ export const DASHBOARD_HTML = `
       <div class="monitor-status-card" id="uptimeBox">
         <span class="status-dot" id="statusDot"></span>
         <span id="monitorStatus">MONITOR ALIVE SINCE:</span>
-        <span id="timerA">00:00:00</span>
+        <span id="timerA">00H 00M 00S</span>
       </div>
       <div class="monitor-status-card" id="dataUpdateBox">
         <span class="data-update-label">LAST DATA UPDATE:</span>
-        <span id="timerB">00:00:00</span>
+        <span id="timerB">00H 00M 00S</span>
         <span>AGO</span>
       </div>
     </div>
@@ -401,7 +401,7 @@ function showData(data) {
     }
 
 function formatDurationHMS(milliseconds) {
-  if (!milliseconds || milliseconds < 0) return '00:00:00';
+  if (!milliseconds || milliseconds < 0) return '00H 00M 00S';
   
   const totalSeconds = Math.floor(milliseconds / 1000);
   const hours = Math.floor(totalSeconds / 3600);
