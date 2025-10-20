@@ -1,91 +1,67 @@
-# Node
-node_modules/
-npm-debug.log*
+# ============================================================================
+# Secure Rosen Bridge Monitor - .gitignore
+# ============================================================================
 
-# Docker logs/data (runtime)
+# --- Secrets & User Data ---
+.env
+.env.local
+.env.*.local
+.cloudflare-config.json
+.cloudflare-config.json.*
+worker/**/.dev.vars
+worker/**/.dev.var
+
+# --- Runtime Data ---
 logs/
 data/
-
-# Generated at runtime
 public/status.json
-
-# Editor/OS noise
-.DS_Store
-*.swp
-
-# Backups & temp
-*.bak
-*.bak.*
-*.backup
-*.tmp
-archive/.env.bak*
-.env
-config/config.json
-config.json
-docker-compose.override.yml
-museum/poll-all-services.sh
-museum/nano poll-all-services.sh
-.cloudflare-config.json
-.cloudflare-config.json
-museum/
 .last-sync-hash
 .cf-sync-state.json
-start-monitoring-*.sh
-*.BAK.*
-.wranglerignore
-.cloudflare-config.json
-start-monitoring*.sh
+docker-compose.override.yml
 
-# --- local dev / secrets / throwaways ---
-.run/
-logs/
-dashboard-*.png
+# --- Node & Dependencies ---
+node_modules/
+npm-debug.log*
+yarn-error.log*
+package-lock.json.bak
 
-# Wrangler local/dev artifacts (keep the main wrangler.toml, ignore backups/temp)
-worker/**/.dev.vars
+# --- Docker & Wrangler ---
+.wrangler/
+**/.wrangler/
 worker/**/wrangler.dev.log
-worker/**/wrangler.toml.BAK*
-worker/**/wrangler.toml.NEW
 
-# Local helper scripts (keep these untracked unless you want them in repo)
-scripts/monitor.sh
-scripts/monitor_control.sh
-
-# OS/editor noise
-.DS_Store
-
-# ignore single-var dev file
-worker/mute-mouse-2cd2/.dev.var
-
-# allow main launcher
-
-# Local backups / artifacts
-*.BAK.*
-*.bak.*
+# --- Backups & Temporary Files ---
 *.bak
+*.bak.*
 *.BAK
-.cloudflare-config.json.*
-logs/
-data/
-worker/**/.wrangler/
+*.BAK.*
+*.backup
+*.tmp
+*.swp
 *.tar.gz
 snapshot_*
-.wrangler/
 
-# --- local/dev artifacts (do not publish) ---
-*.BAK.*
-*.bak.*
-*.BAK
-*.bak
-*.tar.gz
-logs/
-.logs/
-data/
-snapshot_before_scrub.*.tar.gz
-worker/**/.wrangler/
-**/.wrangler/
-**/.wrangler/state/
-Claude.md
-.fuse_hidden*
-worker/mute-mouse-2cd2/create_new_user_register_and_run.md
+# --- Auto-Generated Files ---
+config.json
 worker/mute-mouse-2cd2/worker-configuration.d.ts
+dashboard-*.png
+start-monitoring-*.sh
+
+# --- Personal & Development ---
+Claude.md
+.run/
+museum/
+archive/
+worker/mute-mouse-2cd2/create_new_user_register_and_run.md
+
+# --- OS & Editor ---
+.DS_Store
+.fuse_hidden*
+Thumbs.db
+*.swp
+*~
+
+# --- Keep These (explicitly NOT ignored) ---
+# !start-monitoring.sh
+# !scripts/*.sh
+# !worker/mute-mouse-2cd2/wrangler.toml
