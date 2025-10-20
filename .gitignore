@@ -85,3 +85,5 @@ snapshot_before_scrub.*.tar.gz
 worker/**/.wrangler/
 **/.wrangler/
 **/.wrangler/state/
+Claude.md
+.fuse_hidden*
