@@ -87,3 +87,5 @@ worker/**/.wrangler/
 **/.wrangler/state/
 Claude.md
 .fuse_hidden*
+worker/mute-mouse-2cd2/create_new_user_register_and_run.md
+worker/mute-mouse-2cd2/worker-configuration.d.ts
