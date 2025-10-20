@@ -672,4 +672,4 @@ MIT License – see [`LICENSE`](./LICENSE) for details.
 
 ---
 
-> **Note:** This is a community project for the Rosen Bridge ecosystem. Feedback from Rosen Bridge maintainers and security reviewers is welcome.
+> **Note:** This is a community project for the Rosen Bridge ecosystem maintained by @odiseus_me. Feedback from Rosen Bridge maintainers and security reviewers is welcome.
