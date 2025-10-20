@@ -180,20 +180,102 @@ See [`complete_project_docs.md`](./complete_project_docs.md) for detailed admin 
 
 1️⃣ **Get invitation code from admin**
 
-2️⃣ **Register:**
+2️⃣ **Register with automatic setup:**
 ```bash
+node setup-cloudflare.js
+# Or if using the helper script:
 ./scripts/register-user.sh --invite INVITE-YOUR-CODE-HERE
 ```
 
-3️⃣ **Choose a strong passphrase:**
+**The registration script will:**
+- ✅ Validate your invitation code
+- ✅ Register you with the Cloudflare Worker
+- ✅ **Automatically save your credentials to `.env`** (NEW!)
+- ✅ Ask if you want to save your passphrase (optional)
+
+3️⃣ **Choose a strong passphrase when prompted:**
 - 20+ characters or 4-6 random words
 - Examples: `correct-horse-battery-staple-47` or `MyS3cur3Pass!2025`
-- ⚠️ **Critical:** System refuses weak passphrases like `TestPassphrase123!`
-- **Save it:** Use a password manager – if lost, data cannot be recovered
+- ⚠️ **Critical:** Minimum 8 characters required
+- **Save it:** Use a password manager — if lost, data cannot be recovered
 
-4️⃣ **Save your credentials:**
-- Dashboard URL (shown after registration)
-- Your passphrase (never sent to server)
+**Passphrase Options:**
+- **Save to `.env`** (convenient but less secure) - Choose 'y' when asked
+- **Enter each time** (more secure) - Choose 'n' when asked
+
+4️⃣ **Registration complete!**
+- Your credentials are automatically saved to `.env`
+- Dashboard URL is displayed (also saved in `.cloudflare-config.json`)
+- Ready to start monitoring immediately
+
+---
+
+### Registration with QR Code (Mobile-Friendly)
+
+For easy mobile access with optional auto-login, use the QR registration helper:
+
+**Basic registration (passphrase required on login):**
+```bash
+BASE_URL="https://your-worker.workers.dev" ./scripts/register-with-qr.sh --invite INVITE-XXXX
+```
+
+**With embedded passphrase (auto-login):**
+```bash
+BASE_URL="https://your-worker.workers.dev" ./scripts/register-with-qr.sh \
+  --invite INVITE-XXXX \
+  --embed-passphrase \
+  --passphrase "YourStrongPassphrase123"
+```
+
+**What this does:**
+- ✅ Registers you with the Worker
+- ✅ Saves credentials to `.env` (same as `setup-cloudflare.js`)
+- ✅ Generates a PNG QR code (`dashboard-USERID.png`)
+- ✅ Shows terminal QR code for immediate scanning
+- ✅ Optionally embeds passphrase in URL fragment for auto-login
+
+**Options:**
+- `--embed-passphrase` - Include passphrase in URL (convenient but less secure)
+- `--passphrase VALUE` - Specify passphrase (or prompted securely if omitted)
+- `--fragment-key KEY` - Custom fragment key name (default: `p`)
+- `--qr-out FILE.png` - Custom output filename
+- `--base-url URL` - Override Worker URL (or use `BASE_URL` env var)
+
+**Security Considerations:**
+
+⚠️ **Passphrase Embedding:**
+- When using `--embed-passphrase`, the passphrase is placed in the URL fragment (`#p=...`)
+- The fragment is NOT sent to the server (client-side only)
+- However, anyone who scans the QR can read your passphrase
+- **Use only for:** Personal devices, trusted networks, convenience over security
+- **Don't use for:** Shared devices, public displays, sensitive data
+
+⚠️ **Browser Autofill Conflicts:**
+- If you previously saved a passphrase in your browser, it may conflict with the fragment passphrase
+- **Solution:** Use incognito/private mode, or clear saved passwords for the site
+- The browser may prefer saved credentials over the URL fragment
+
+**Example workflow:**
+```bash
+# 1. Admin creates invite
+curl -X POST https://your-worker.workers.dev/api/admin/create-invite \
+  -H "x-admin-key: YOUR_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"count": 1, "expiresInDays": 7}'
+
+# 2. User registers with QR
+BASE_URL="https://your-worker.workers.dev" ./scripts/register-with-qr.sh \
+  --invite INVITE-ABC123-XYZ789 \
+  --embed-passphrase
+
+# 3. Scan QR on phone → auto-login to encrypted dashboard
+```
+
+**Output:**
+- Terminal displays QR code
+- PNG saved as `dashboard-USERID.png`
+- Dashboard URL shown (with or without embedded passphrase)
+- Same `.env` credentials as standard registration
 
 ---
 
@@ -205,10 +287,14 @@ See [`complete_project_docs.md`](./complete_project_docs.md) for detailed admin 
 docker compose up -d
 
 # 2. Start Cloudflare sync (required for remote monitoring)
+# If you saved your passphrase during registration:
+./start-monitoring.sh &
+
+# If you chose NOT to save your passphrase:
 DASH_PASSPHRASE='your-passphrase' ./start-monitoring.sh &
 ```
 
-⚠️ **Critical:** Always set `DASH_PASSPHRASE` when starting the sync script. If omitted, encryption will use a default passphrase and your dashboard won't be able to decrypt the data.
+**Note:** The registration process automatically configured your `.env` file with `BASE_URL`, `WRITE_TOKEN`, and `DASH_SALT_B64`. You only need to provide `DASH_PASSPHRASE` if you chose not to save it during registration.
 
 **Stop everything:**
 ```bash
@@ -255,9 +341,9 @@ DASH_PASSPHRASE='your-passphrase' ./start-monitoring.sh &
 - Works on any device with internet
 
 **Mobile access:**
-- Use QR code from setup script (if enabled)
+- **Local monitor:** Use `SHOW_QR=1 ./scripts/prepare_build.sh` for QR code of local dashboard
+- **Remote dashboard:** Use `./scripts/register-with-qr.sh --invite CODE` for encrypted dashboard QR (see "Registration with QR Code" section)
 - Or manually enter the URL on your phone
-
 ---
 
 ## Advanced Configuration
@@ -535,7 +621,8 @@ See [`complete_project_docs.md`](./complete_project_docs.md) for comprehensive c
 secure-rb-monitor-public/
 ├── scripts/
 │   ├── prepare_build.sh       # Auto-setup and discovery
-│   └── register-user.sh       # User registration helper
+│   ├── register-user.sh       # User registration helper
+│   └── register-with-qr.sh    # QR code registration (mobile)
 ├── worker/
 │   └── mute-mouse-2cd2/       # Cloudflare Worker code
 │       ├── src/               # Worker endpoints

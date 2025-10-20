@@ -210,10 +210,10 @@ main() {
     fi
     echo "Monitor URL: $MONITOR_URL"
     [ -n "$LAN_URL" ] && echo "LAN URL:     $LAN_URL"
-    print_qr "$MONITOR_URL"
-    open_browser "$MONITOR_URL"
     QR_URL="$MONITOR_URL"
     [ -n "$LAN_URL" ] && QR_URL="$LAN_URL"
+    print_qr "$QR_URL"
+    open_browser "$MONITOR_URL"
   else
     port="$START_PORT"
     count=0
@@ -243,17 +243,18 @@ main() {
     fi
     echo "Monitor URL: $MONITOR_URL"
     [ -n "$LAN_URL" ] && echo "LAN URL:     $LAN_URL"
-    print_qr "$MONITOR_URL"
-    open_browser "$MONITOR_URL"
     QR_URL="$MONITOR_URL"
     [ -n "$LAN_URL" ] && QR_URL="$LAN_URL"
+    print_qr "$QR_URL"
+    open_browser "$MONITOR_URL"
   fi
 
-  # Interactive prompts if watchers are found
-  if [ "$WATCHERS_FOUND" -gt 0 ]; then
-    # --- QR code prompt ---
-    while true; do
-      read -r -p "Would you like to see a QR code for phone access to the monitor at $QR_URL? [y/N] " qr_reply
+    # Interactive prompts if watchers are found
+      if [ "$WATCHERS_FOUND" -gt 0 ]; then
+        # --- QR code prompt (only if not already shown via SHOW_QR) ---
+        if [ "$SHOW_QR" != "1" ]; then
+          while true; do
+            read -r -p "Would you like to see a QR code for phone access to the monitor at $QR_URL? [y/N] " qr_reply
       qr_reply="${qr_reply,,}"  # to lowercase
       if [[ -z "$qr_reply" || "$qr_reply" == "n" || "$qr_reply" == "no" ]]; then
         break
@@ -313,6 +314,7 @@ main() {
         break
       fi
     done
+    fi  # Close the "if [ "$SHOW_QR" != "1" ]" block
 
     # --- Monitor run prompt ---
     while true; do
