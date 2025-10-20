@@ -2,7 +2,9 @@
 /**
  * setup-cloudflare.js
  * -------------------
- * Registers a new user with the Worker and stores credentials in .cloudflare-config.json
+ * Registers a new user with the Worker and stores credentials in both:
+ * - .cloudflare-config.json (for backwards compatibility)
+ * - .env file (for easier use with start-monitoring.sh)
  *
  * HOW TO USE (local dev):
  *   BASE_URL=http://localhost:38472 node setup-cloudflare.js
@@ -33,6 +35,22 @@ if (!fetchFn) {
 
 // ---- Files / paths -----------------------------------------------------------
 const CONFIG_FILE = path.join(process.cwd(), '.cloudflare-config.json');
+const ENV_FILE = path.join(process.cwd(), '.env');
+const ENV_EXAMPLE_FILE = path.join(process.cwd(), '.env.example');
+
+// ---- Helper function to update or add environment variable ------------------
+function updateOrAddEnvVar(content, varName, value) {
+  const regex = new RegExp(`^${varName}=.*$`, 'gm');
+  const newLine = `${varName}=${value}`;
+  
+  if (regex.test(content)) {
+    // Variable exists, update it
+    return content.replace(regex, newLine);
+  } else {
+    // Variable doesn't exist, add it
+    return content + '\n' + newLine;
+  }
+}
 
 // ---- tiny prompt helpers -----------------------------------------------------
 function askYesNo(question, defaultNo = true) {
@@ -57,9 +75,23 @@ function askLine(question) {
   });
 }
 
+function askPassword(question) {
+  const rl = require('readline').createInterface({ 
+    input: process.stdin, 
+    output: process.stdout 
+  });
+  return new Promise(resolve => {
+    // Simple password input (hiding characters would need additional complexity)
+    rl.question(`${question}: `, (ans) => {
+      rl.close();
+      resolve(ans);
+    });
+  });
+}
+
 // ---- main -------------------------------------------------------------------
 (async function main() {
-  console.log('🔐 Cloudflare Registration for Rosen Bridge Monitor\n');
+  console.log('Cloudflare Registration for Rosen Bridge Monitor\n');
 
   // If config exists, ask if they want to create a new registration
   let existing = null;
@@ -129,7 +161,7 @@ function askLine(question) {
     dashboardUrl: reg.dashboardUrl
   };
 
-  // Write file
+  // Write to .cloudflare-config.json (for backwards compatibility)
   try {
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(newConfig, null, 2));
   } catch (err) {
@@ -138,15 +170,81 @@ function askLine(question) {
     process.exit(1);
   }
 
+  // Now update .env file with the credentials
+  console.log('\n Updating .env file with credentials...');
+  
+  // Read existing .env or create from .env.example
+  let envContent = '';
+  if (fs.existsSync(ENV_FILE)) {
+    envContent = fs.readFileSync(ENV_FILE, 'utf8');
+    console.log('Found existing .env file, updating it...');
+  } else if (fs.existsSync(ENV_EXAMPLE_FILE)) {
+    envContent = fs.readFileSync(ENV_EXAMPLE_FILE, 'utf8');
+    console.log('Creating .env from .env.example...');
+  } else {
+    console.log('No .env or .env.example found, creating new .env...');
+  }
+
+  // Add header comment if this is a new section
+  if (!envContent.includes('# Cloudflare Worker Configuration')) {
+    envContent += '\n\n# Cloudflare Worker Configuration (auto-updated by setup-cloudflare.js)\n';
+    envContent += `# Updated on: ${new Date().toISOString()}\n`;
+    envContent += '# These values are specific to YOUR registration - do not share!\n';
+  }
+
+  // Update or add the registration values
+  envContent = updateOrAddEnvVar(envContent, 'BASE_URL', BASE_URL);
+  envContent = updateOrAddEnvVar(envContent, 'WRITE_TOKEN', reg.writeToken);
+  envContent = updateOrAddEnvVar(envContent, 'DASH_SALT_B64', reg.salt);
+
+  // Save .env
+  try {
+    fs.writeFileSync(ENV_FILE, envContent);
+    console.log('Updated .env with registration credentials');
+  } catch (err) {
+    console.error('Failed to write .env file:');
+    console.error(err);
+    process.exit(1);
+  }
+
+  // Ask about passphrase
+  console.log('\n Passphrase Configuration');
+  console.log('You need a passphrase to encrypt your data.');
+  console.log('This should be strong and memorable (20+ characters recommended).\n');
+  
+  const savePassphrase = await askYesNo('Would you like to save your passphrase to .env? (convenient but less secure)', true);
+  
+  if (savePassphrase) {
+    const passphrase = await askPassword('Enter your passphrase');
+    if (passphrase && passphrase.length >= 8) {
+      envContent = fs.readFileSync(ENV_FILE, 'utf8');
+      envContent = updateOrAddEnvVar(envContent, 'DASH_PASSPHRASE', passphrase);
+      fs.writeFileSync(ENV_FILE, envContent);
+      console.log('Passphrase saved to .env');
+      console.log('Keep your .env file secure and never commit it to git!');
+    } else {
+      console.log('Warning! Passphrase too short (minimum 8 characters). Not saved.');
+      console.log('You will need to provide it when running: DASH_PASSPHRASE="your-pass" ./start-monitoring.sh');
+    }
+  } else {
+    console.log('Passphrase not saved (more secure)');
+    console.log('You will need to provide it each time: DASH_PASSPHRASE="your-pass" ./start-monitoring.sh');
+  }
+
   // Friendly summary
-  console.log('\n✅ Registration complete. Saved to .cloudflare-config.json\n');
-  console.log('Public ID:    ', reg.publicId);
-  console.log('Write token:  ', reg.writeToken);
-  console.log('Salt (b64):   ', reg.salt);
-  console.log('Dashboard URL:', reg.dashboardUrl);
-  console.log('\nYou can now run your uploader or open the dashboard URL above.\n');
+  console.log('\n Registration complete!\n');
+  console.log('Configuration saved to:');
+  console.log('  - .cloudflare-config.json (full config)');
+  console.log('  - .env (credentials for monitoring)');
+  console.log('\nYour dashboard URL:', reg.dashboardUrl);
+  console.log('\nTo start monitoring:');
+  if (savePassphrase) {
+    console.log('  ./start-monitoring.sh');
+  } else {
+    console.log('  DASH_PASSPHRASE="your-passphrase" ./start-monitoring.sh');
+  }
+  console.log('\n');
 })().catch((e) => {
   console.error('Unexpected error:', e);
   process.exit(1);
 });
-

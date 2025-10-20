@@ -344,6 +344,7 @@ DASH_PASSPHRASE='your-passphrase' ./start-monitoring.sh &
 - **Local monitor:** Use `SHOW_QR=1 ./scripts/prepare_build.sh` for QR code of local dashboard
 - **Remote dashboard:** Use `./scripts/register-with-qr.sh --invite CODE` for encrypted dashboard QR (see "Registration with QR Code" section)
 - Or manually enter the URL on your phone
+
 ---
 
 ## Advanced Configuration
