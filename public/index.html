@@ -111,23 +111,23 @@
         return { status: 'unknown', message: 'No data', available: 0, total: 0, utilization: 0 };
       }
 
-      const totalBlocks = Math.floor(total / perEvent);
+      const totalPermits = Math.floor(total / perEvent);
       // If active==total use full blocks, otherwise floor(active/perEvent)
-      let availableBlocks = (active === total) ? totalBlocks : Math.floor(active / perEvent);
-      if (!Number.isFinite(availableBlocks) || availableBlocks < 0) availableBlocks = 0;
+      let availablePermits = (active === total) ? totalPermits : Math.floor(active / perEvent);
+      if (!Number.isFinite(availablePermits) || availablePermits < 0) availablePermits = 0;
 
       let status = 'exhausted';
-      if (availableBlocks >= 2) status = 'sufficient';
-      else if (availableBlocks === 1) status = 'critical';
+      if (availablePermits >= 2) status = 'sufficient';
+      else if (availablePermits === 1) status = 'critical';
 
-      const utilization = (totalBlocks > 0) ? (1 - (availableBlocks / totalBlocks)) : 0; // used fraction
-      const message = (totalBlocks > 0) ? `${availableBlocks}/${totalBlocks} blocks` : 'No data';
+      const utilization = (totalPermits > 0) ? (1 - (availablePermits / totalPermits)) : 0; // used fraction
+      const message = (totalPermits > 0) ? `${availablePermits}/${totalPermits}` : 'No data';
 
       return {
         status,
         message,
-        available: availableBlocks,
-        total: totalBlocks,
+        available: availablePermits,
+        total: totalPermits,
         utilization
       };
     }

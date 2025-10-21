@@ -47,6 +47,10 @@ worker/mute-mouse-2cd2/worker-configuration.d.ts
 dashboard-*.png
 start-monitoring-*.sh
 
+# --- Demo Files ---
+demo_status.json
+.cf-sync-demo-state.json
+
 # --- Personal & Development ---
 Claude.md
 .run/

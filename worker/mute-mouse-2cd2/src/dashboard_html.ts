@@ -276,19 +276,19 @@ function showData(data) {
       if (!perEvent || active == null || total == null) {
         return { status: 'unknown', message: 'No data', available: 0, total: 0, utilization: 0 };
       }
-      const totalBlocks = Math.floor(total / perEvent);
-      let availableBlocks = (active === total) ? totalBlocks : Math.floor(active / perEvent);
-      if (!Number.isFinite(availableBlocks) || availableBlocks < 0) availableBlocks = 0;
+      const totalPermits = Math.floor(total / perEvent);
+      let availablePermits = (active === total) ? totalPermits : Math.floor(active / perEvent);
+      if (!Number.isFinite(availablePermits) || availablePermits < 0) availablePermits = 0;
       let status = 'exhausted';
-      if (availableBlocks >= 2) status = 'sufficient';
-      else if (availableBlocks === 1) status = 'critical';
-      const utilization = (totalBlocks > 0) ? (1 - (availableBlocks / totalBlocks)) : 0;
-      const message = (totalBlocks > 0) ? (availableBlocks + '/' + totalBlocks + ' blocks') : 'No data';
+      if (availablePermits >= 2) status = 'sufficient';
+      else if (availablePermits === 1) status = 'critical';
+      const utilization = (totalPermits > 0) ? (1 - (availablePermits / totalPermits)) : 0;
+      const message = (totalPermits > 0) ? (availablePermits + '/' + totalPermits) : 'No data';
       return {
         status,
         message,
-        available: availableBlocks,
-        total: totalBlocks,
+        available: availablePermits,
+        total: totalPermits,
         utilization
       };
     }
@@ -357,7 +357,7 @@ function showData(data) {
         '<div class="status-row-2col">' +
           '<div class="status-col"><strong>Permits:</strong> ' + avail + '/' + total + '</div>' +
           '<div class="status-col right"><strong>Status:</strong> ' +
-            '<span class="permit-' + permitStatus.status.replace(/\\s+/g, '-').toLowerCase() + '">' + (permitStatus.message || '') + '</span>' +
+            '<span class="permit-' + permitStatus.status.replace(/\\s+/g, '-').toLowerCase() + '">' + (permitStatus.status || 'unknown') + '</span>' +
           '</div>' +
         '</div>' +
         '<div class="progress-bar">' +
