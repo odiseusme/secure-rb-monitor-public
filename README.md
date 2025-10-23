@@ -1,5 +1,19 @@
 # Secure Rosen Bridge Monitor
 
+
+<- Works from any directory ( auto-detects project root ) RBM_ROADMAP_REF:START -->
+## Project Overview and Roadmap
+
+For a complete, consolidated description of the project (architecture, security model, flows, deployment, troubleshooting) and a forward-looking roadmap with acceptance criteria, see:
+- [RBMonitor_project_description_and_future_plans.md](./RBMonitor_project_description_and_future_plans.md)
+
+This document is the single source of truth for:
+- Full project overview and design decisions
+- Current capabilities and deployment guidance
+- Prioritized roadmap and security hardening steps
+- What’s shipped vs. planned (with acceptance criteria)
+
+<- Works from any directory ( auto-detects project root ) RBM_ROADMAP_REF:END -->
 Zero-knowledge, end-to-end encrypted monitoring for Rosen Bridge watchers. Monitor your nodes locally or remotely with a simple, mobile-friendly dashboard – no privileged access required.
 
 **Key Features:**
