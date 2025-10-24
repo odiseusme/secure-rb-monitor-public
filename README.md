@@ -11,7 +11,7 @@ This document is the single source of truth for:
 - Full project overview and design decisions
 - Current capabilities and deployment guidance
 - Prioritized roadmap and security hardening steps
-- What’s shipped vs. planned (with acceptance criteria)
+- What's shipped vs. planned (with acceptance criteria)
 
 <!-- RBM_ROADMAP_REF:END -->
 Zero-knowledge, end-to-end encrypted monitoring for Rosen Bridge watchers. Monitor your nodes locally or remotely with a simple, mobile-friendly dashboard – no privileged access required.
@@ -90,24 +90,218 @@ wrangler deploy
 
 🛡️ **Tip:** The Worker enforces HTTPS automatically in production and ships with rate-limiting **enabled by default**. You can adjust thresholds in `src/config.ts` if needed.
 
-**3. Start the worker locally for development:**
-```bash
-# Terminal 1 – start worker
-cd worker/mute-mouse-2cd2
-npm exec wrangler -- dev --port 38472 --local
+---
 
-# Terminal 2 – register and start encrypted sync
-cd ../..
-./scripts/register-user.sh --invite YOUR-INVITE-CODE
-DASH_PASSPHRASE='your-strong-passphrase' ./start-monitoring.sh &
+## For Users
+
+### Complete Registration Workflow
+
+**Step 1: Get invitation code from admin**
+
+**Step 2: Register with automatic credential setup**
+
+For production (remote Worker):
+```bash
+BASE_URL="https://your-worker.workers.dev" ./scripts/register-user.sh --invite INVITE-YOUR-CODE
 ```
 
-**4. Access your encrypted dashboard:**
-- URL shown after registration (e.g., `https://your-worker.workers.dev/d/YOUR-USER-ID`)
+For local development:
+```bash
+BASE_URL="http://localhost:38472" ./scripts/register-user.sh --invite INVITE-YOUR-CODE
+```
+
+**What happens during registration:**
+1. ✅ Script validates your invitation code with the Worker
+2. ✅ You'll be prompted to choose a passphrase (twice for confirmation)
+3. ✅ Minimum 8 characters enforced for security
+4. ✅ Credentials automatically saved to `.env` file
+5. ✅ Dashboard URL displayed and saved to `.cloudflare-config.json`
+6. ✅ Security warnings shown about keeping `.env` secure
+
+**Step 3: Choose a strong passphrase when prompted**
+```
+Passphrase (min 8 chars): ••••••••••••••••
+Confirm passphrase: ••••••••••••••••
+```
+
+**Passphrase Guidelines:**
+- **Minimum:** 8 characters (enforced)
+- **Recommended:** 20+ characters or 4-6 random words
+- **Examples:** 
+  - `correct-horse-battery-staple-47`
+  - `MyS3cur3Pass!2025#RosenBridge`
+- ⚠️ **Critical:** Save it in a password manager — if lost, data cannot be recovered
+
+**Step 4: Registration complete!**
+```
+✓ Registered: abc123def456
+✓ Credentials saved to .env
+✓ Created: start-monitoring.sh
+
+IMPORTANT: Your passphrase has been saved to .env
+Keep this file secure and do not commit it to version control!
+
+Dashboard: https://your-worker.workers.dev/d/abc123def456
+
+To start monitoring: ./scripts/monitor_control.sh start
+```
+
+**Step 5: Start monitoring**
+
+Use the monitor control script to manage both the producer (Docker) and uploader (host):
+
+```bash
+./scripts/monitor_control.sh start
+```
+
+**Step 6: Access your encrypted dashboard**
+- Open the dashboard URL shown after registration
 - Enter your passphrase to decrypt and view data
 - Works from any device, anywhere
 
-**Security:** All data encrypted before upload – only you can decrypt it.
+**Security:** All data is encrypted before upload – only you can decrypt it with your passphrase.
+
+---
+
+### Monitor Control Script
+
+The `monitor_control.sh` script manages both components of the monitoring system:
+- **Producer** (Docker container): Collects watcher status data
+- **Uploader** (host process): Encrypts and uploads data to Cloudflare
+
+#### Commands
+
+**Start monitoring:**
+```bash
+./scripts/monitor_control.sh start
+```
+Starts both producer container and uploader process.
+
+**Stop monitoring:**
+```bash
+./scripts/monitor_control.sh stop
+```
+Gracefully stops both components with proper cleanup.
+
+**Check status:**
+```bash
+./scripts/monitor_control.sh status
+```
+Shows current state of producer and uploader.
+
+**Restart monitoring:**
+```bash
+./scripts/monitor_control.sh restart
+```
+Stops and starts both components cleanly.
+
+**Interactive menu:**
+```bash
+./scripts/monitor_control.sh
+```
+Shows an interactive menu if no command is specified:
+```
+🛰️  Cloudflare Monitor – What would you like to do?
+   [S]tatus   [V] Start   [X] Stop   [R] Restart   [Q] Quit
+```
+
+#### Advanced Options
+
+**Start only producer (skip uploader):**
+```bash
+./scripts/monitor_control.sh start --no-sync
+```
+
+**Start only uploader (skip producer):**
+```bash
+./scripts/monitor_control.sh start --no-docker
+```
+
+**Custom Worker URL:**
+```bash
+BASE_URL="https://custom-worker.workers.dev" ./scripts/monitor_control.sh start
+```
+
+#### Status Output Example
+
+```bash
+$ ./scripts/monitor_control.sh status
+
+🛰️  Cloudflare Monitor – Status
+   🌐  Base URL: http://localhost:38472
+   🐳  Producer: running (container=rosen-bridge-monitor)
+   ⬆️  Uploader: running (pid=12345)
+```
+
+#### How It Works
+
+**Producer (Docker):**
+- Runs `write_status.js` inside a Docker container
+- Polls watcher APIs every 30 seconds
+- Writes status to `public/status.json`
+- Managed via `docker compose` for proper restart policies
+- Automatically removes stopped containers before starting
+
+**Uploader (Host):**
+- Runs `cloudflare-sync.js` as a background process
+- Reads credentials from `.env` file (created by `register-user.sh`)
+- Encrypts data using your passphrase
+- Uploads encrypted data to Cloudflare Worker
+- PID tracked in `.run/uploader.pid` for management
+- Graceful shutdown with 5-second timeout, then SIGKILL fallback
+
+**Integration:**
+- The script ensures `.env` exists and contains required variables
+- Worker health check performed before starting uploader
+- Adopts externally-started processes where possible
+- Supports differently named containers with auto-detection
+
+---
+
+### Registration with QR Code (Mobile-Friendly)
+
+For easy mobile access with optional auto-login, use the QR registration helper:
+
+**Basic registration (passphrase required on login):**
+```bash
+BASE_URL="https://your-worker.workers.dev" ./scripts/register-with-qr.sh --invite INVITE-XXXX
+```
+
+**With embedded passphrase (auto-login):**
+```bash
+BASE_URL="https://your-worker.workers.dev" ./scripts/register-with-qr.sh \
+  --invite INVITE-XXXX \
+  --embed-passphrase \
+  --passphrase "YourStrongPassphrase123"
+```
+
+**What this does:**
+- ✅ Registers you with the Worker
+- ✅ Saves credentials to `.env` (same as `register-user.sh`)
+- ✅ Generates a PNG QR code (`dashboard-USERID.png`)
+- ✅ Shows terminal QR code for immediate scanning
+- ✅ Optionally embeds passphrase in URL fragment for auto-login
+
+**Options:**
+- `--embed-passphrase` - Include passphrase in URL (convenient but less secure)
+- `--passphrase VALUE` - Specify passphrase (or prompted securely if omitted)
+- `--fragment-key KEY` - Custom fragment key name (default: `p`)
+- `--qr-out FILE.png` - Custom output filename
+- `--base-url URL` - Override Worker URL (or use `BASE_URL` env var)
+
+**Security Considerations:**
+
+⚠️ **Passphrase Embedding:**
+- When using `--embed-passphrase`, the passphrase is placed in the URL fragment (`#p=...`)
+- The fragment is NOT sent to the server (client-side only)
+- However, anyone who scans the QR can read your passphrase
+- **Use only for:** Personal devices, trusted networks, convenience over security
+- **Don't use for:** Shared devices, public displays, sensitive data
+
+⚠️ **Browser Autofill Conflicts:**
+- If you previously saved a passphrase in your browser, it may conflict with the fragment passphrase
+- **Solution:** Use incognito/private mode, or clear saved passwords for the site
+- The browser may prefer saved credentials over the URL fragment
 
 ---
 
@@ -163,7 +357,26 @@ curl -X POST https://your-worker.workers.dev/api/admin/create-invite \
 }
 ```
 
-Send invitation codes securely to users (email, encrypted chat, etc.).
+**Share invitation codes securely** with users (email, encrypted chat, etc.).
+
+**Example workflow:**
+```bash
+# 1. Admin creates invite
+curl -X POST https://your-worker.workers.dev/api/admin/create-invite \
+  -H "x-admin-key: YOUR_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"count": 1, "expiresInDays": 7}'
+
+# 2. Admin shares INVITE-CODE with user securely
+
+# 3. User registers
+BASE_URL="https://your-worker.workers.dev" ./scripts/register-user.sh --invite INVITE-CODE
+
+# 4. User starts monitoring
+./scripts/monitor_control.sh start
+
+# 5. User accesses dashboard from anywhere
+```
 
 ---
 
@@ -188,227 +401,14 @@ See [`complete_project_docs.md`](./complete_project_docs.md) for detailed admin 
 
 ---
 
-## For Users
-
-### Registration
-
-1️⃣ **Get invitation code from admin**
-
-2️⃣ **Register with automatic setup:**
-```bash
-node setup-cloudflare.js
-# Or if using the helper script:
-./scripts/register-user.sh --invite INVITE-YOUR-CODE-HERE
-```
-
-**The registration script will:**
-- ✅ Validate your invitation code
-- ✅ Register you with the Cloudflare Worker
-- ✅ **Automatically save your credentials to `.env`** (NEW!)
-- ✅ Ask if you want to save your passphrase (optional)
-
-3️⃣ **Choose a strong passphrase when prompted:**
-- 20+ characters or 4-6 random words
-- Examples: `correct-horse-battery-staple-47` or `MyS3cur3Pass!2025`
-- ⚠️ **Critical:** Minimum 8 characters required
-- **Save it:** Use a password manager — if lost, data cannot be recovered
-
-**Passphrase Options:**
-- **Save to `.env`** (convenient but less secure) - Choose 'y' when asked
-- **Enter each time** (more secure) - Choose 'n' when asked
-
-4️⃣ **Registration complete!**
-- Your credentials are automatically saved to `.env`
-- Dashboard URL is displayed (also saved in `.cloudflare-config.json`)
-- Ready to start monitoring immediately
-
----
-
-### Registration with QR Code (Mobile-Friendly)
-
-For easy mobile access with optional auto-login, use the QR registration helper:
-
-**Basic registration (passphrase required on login):**
-```bash
-BASE_URL="https://your-worker.workers.dev" ./scripts/register-with-qr.sh --invite INVITE-XXXX
-```
-
-**With embedded passphrase (auto-login):**
-```bash
-BASE_URL="https://your-worker.workers.dev" ./scripts/register-with-qr.sh \
-  --invite INVITE-XXXX \
-  --embed-passphrase \
-  --passphrase "YourStrongPassphrase123"
-```
-
-**What this does:**
-- ✅ Registers you with the Worker
-- ✅ Saves credentials to `.env` (same as `setup-cloudflare.js`)
-- ✅ Generates a PNG QR code (`dashboard-USERID.png`)
-- ✅ Shows terminal QR code for immediate scanning
-- ✅ Optionally embeds passphrase in URL fragment for auto-login
-
-**Options:**
-- `--embed-passphrase` - Include passphrase in URL (convenient but less secure)
-- `--passphrase VALUE` - Specify passphrase (or prompted securely if omitted)
-- `--fragment-key KEY` - Custom fragment key name (default: `p`)
-- `--qr-out FILE.png` - Custom output filename
-- `--base-url URL` - Override Worker URL (or use `BASE_URL` env var)
-
-**Security Considerations:**
-
-⚠️ **Passphrase Embedding:**
-- When using `--embed-passphrase`, the passphrase is placed in the URL fragment (`#p=...`)
-- The fragment is NOT sent to the server (client-side only)
-- However, anyone who scans the QR can read your passphrase
-- **Use only for:** Personal devices, trusted networks, convenience over security
-- **Don't use for:** Shared devices, public displays, sensitive data
-
-⚠️ **Browser Autofill Conflicts:**
-- If you previously saved a passphrase in your browser, it may conflict with the fragment passphrase
-- **Solution:** Use incognito/private mode, or clear saved passwords for the site
-- The browser may prefer saved credentials over the URL fragment
-
-**Example workflow:**
-```bash
-# 1. Admin creates invite
-curl -X POST https://your-worker.workers.dev/api/admin/create-invite \
-  -H "x-admin-key: YOUR_ADMIN_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"count": 1, "expiresInDays": 7}'
-
-# 2. User registers with QR
-BASE_URL="https://your-worker.workers.dev" ./scripts/register-with-qr.sh \
-  --invite INVITE-ABC123-XYZ789 \
-  --embed-passphrase
-
-# 3. Scan QR on phone → auto-login to encrypted dashboard
-```
-
-**Output:**
-- Terminal displays QR code
-- PNG saved as `dashboard-USERID.png`
-- Dashboard URL shown (with or without embedded passphrase)
-- Same `.env` credentials as standard registration
-
----
-
-### Starting and Stopping
-
-**Start everything:**
-```bash
-# 1. Start local monitor
-docker compose up -d
-
-# 2. Start Cloudflare sync (required for remote monitoring)
-# If you saved your passphrase during registration:
-./start-monitoring.sh &
-
-# If you chose NOT to save your passphrase:
-DASH_PASSPHRASE='your-passphrase' ./start-monitoring.sh &
-```
-
-**Note:** The registration process automatically configured your `.env` file with `BASE_URL`, `WRITE_TOKEN`, and `DASH_SALT_B64`. You only need to provide `DASH_PASSPHRASE` if you chose not to save it during registration.
-
-**Stop everything:**
-```bash
-# Stop Cloudflare sync
-pkill -f cloudflare-sync.js
-
-# Stop local monitor
-docker compose down
-```
-
-**Check status:**
-```bash
-# Docker container
-docker ps | grep rosen-bridge-monitor
-
-# Cloudflare sync
-ps aux | grep cloudflare-sync.js | grep -v grep
-
-# View logs
-docker compose logs -f
-```
-
-**Restart after changes:**
-```bash
-# Restart Docker
-docker compose restart
-
-# Restart Cloudflare sync (always with passphrase!)
-pkill -f cloudflare-sync.js
-DASH_PASSPHRASE='your-passphrase' ./start-monitoring.sh &
-```
-
----
-
-### Accessing Your Dashboard
-
-**Local (Path A):**
-- URL: `http://localhost:8080` or IP shown by setup script
-- No passphrase needed (local access only)
-
-**Remote (Path B):**
-- URL: `https://your-worker.workers.dev/d/YOUR-USER-ID`
-- Enter your passphrase to decrypt
-- Works on any device with internet
-
-**Mobile access:**
-- **Local monitor:** Use `SHOW_QR=1 ./scripts/prepare_build.sh` for QR code of local dashboard
-- **Remote dashboard:** Use `./scripts/register-with-qr.sh --invite CODE` for encrypted dashboard QR (see "Registration with QR Code" section)
-- Or manually enter the URL on your phone
-
----
-
-## Advanced Configuration
-
-### Setup Script Options
-
-Customize the automatic setup:
-
-```bash
-BIND_ALL=1 ./scripts/prepare_build.sh   # LAN access
-SHOW_QR=1 ./scripts/prepare_build.sh    # Show QR for mobile
-OPEN_BROWSER=1 ./scripts/prepare_build.sh
-FORCE=1 ./scripts/prepare_build.sh      # Regenerate config
-```
-
-### Adding/Removing Watchers
-
-When watcher containers change:
-
-```bash
-./scripts/prepare_build.sh
-docker compose up -d --build
-```
-
-Auto-discovers new watchers and updates configuration.
-
-### Manual Configuration
-
-Override automatic discovery by editing `config.json`:
-
-```json
-{
-  "watchers": [
-    {
-      "name": "watcher_ergo",
-      "ui_name": "watcher_ergo-ui-1",
-      "ui_port": 3030,
-      "service_name": "watcher_ergo-service-1",
-      "service_url": "http://watcher_ergo-service-1:3000/info",
-      "network": "ergo"
-    }
-  ]
-}
-```
-
----
-
 ## Development
 
 ### Local Development Setup
+
+**Prerequisites:**
+- Node.js 18+ and npm
+- Docker and Docker Compose
+- jq, curl (typically pre-installed on Linux/macOS)
 
 **Install dependencies:**
 ```bash
@@ -418,21 +418,24 @@ cd worker/mute-mouse-2cd2 && npm install
 
 **Start components:**
 ```bash
-# Terminal 1 – Worker
+# Terminal 1 – Worker (local development)
 cd worker/mute-mouse-2cd2
 npm exec wrangler -- dev --port 38472 --local
 
-# Terminal 2 – Docker monitor
+# Terminal 2 – Producer (Docker)
+cd ../..
 docker compose up -d --build
 
-# Terminal 3 – Cloudflare sync (optional)
-DASH_PASSPHRASE='test' ./start-monitoring.sh
+# Terminal 3 – Register and start uploader
+BASE_URL="http://localhost:38472" ./scripts/register-user.sh --invite YOUR-INVITE-CODE
+./scripts/monitor_control.sh start --no-docker  # Skip Docker since already running
 ```
 
 **Make changes and test:**
 - Worker auto-reloads on changes
-- Restart Docker for container changes
-- Re-run setup script when adding watchers
+- Restart Docker for container changes: `docker compose restart`
+- Re-run setup script when adding watchers: `./scripts/prepare_build.sh`
+- Use `monitor_control.sh status` to check component states
 
 ### CI/CD
 
@@ -527,6 +530,18 @@ Baseline GitHub Actions workflow included. Customize for your needs.
 
 ## Troubleshooting
 
+### Registration Issues
+
+**Problem:** `Registration failed - config not created`
+
+**Solution:**
+- Ensure Worker is running and accessible at BASE_URL
+- Check invitation code hasn't expired
+- Verify network connectivity to Worker
+- For local development, ensure `wrangler dev` is running
+
+---
+
 ### Watchers Not Discovered
 
 **Symptom:** Setup script finds 0 watchers
@@ -535,6 +550,39 @@ Baseline GitHub Actions workflow included. Customize for your needs.
 - Ensure watcher containers are running: `docker ps`
 - Check container names end with `-ui-1` or `-service-1`
 - Verify watchers are healthy: `docker ps -a`
+
+---
+
+### Monitor Control Issues
+
+**Problem:** `Producer container not present` or `Uploader not running`
+
+**Solution:**
+```bash
+# Check overall status
+./scripts/monitor_control.sh status
+
+# If producer not running
+docker compose up -d
+
+# If uploader not running (ensure .env exists first)
+./scripts/monitor_control.sh start --no-docker
+
+# Full restart
+./scripts/monitor_control.sh restart
+```
+
+**Problem:** `Error: BASE_URL not set in .env`
+
+**Solution:**
+- Run `register-user.sh` first to create `.env` file
+- Or manually add credentials to `.env`:
+```bash
+BASE_URL=https://your-worker.workers.dev
+WRITE_TOKEN=your-write-token
+DASH_SALT_B64=your-salt
+DASH_PASSPHRASE=your-passphrase
+```
 
 ---
 
@@ -554,10 +602,10 @@ Baseline GitHub Actions workflow included. Customize for your needs.
 **Symptom:** "Cannot access property 'nonce'" or decrypt failures
 
 **Solution:**
-- Ensure `cloudflare-sync.js` is running and uploading
-- **Verify `DASH_PASSPHRASE` was set when starting the sync script**
+- Ensure `cloudflare-sync.js` is running: `./scripts/monitor_control.sh status`
+- Verify credentials in `.env` are correct
 - Wait 60 seconds for first upload to complete
-- Check worker is running: `curl http://localhost:38472/health`
+- Check worker is running: `curl $BASE_URL/health`
 - Verify correct passphrase in dashboard (case-sensitive, must match exactly)
 
 ---
@@ -568,11 +616,14 @@ Baseline GitHub Actions workflow included. Customize for your needs.
 
 **Solution:**
 ```bash
-# Remove stuck container
-docker rm -f rosen-bridge-monitor
+# Stop and remove any existing containers
+./scripts/monitor_control.sh stop
 
 # Rebuild and restart
 docker compose up -d --build
+
+# Or use the control script
+./scripts/monitor_control.sh restart
 ```
 
 ---
@@ -594,14 +645,34 @@ sudo chown -R 1000:1000 data/ logs/ config/ public/
 **Symptom:** Dashboard shows stale data
 
 **Solution:**
-- Check process running: `ps aux | grep cloudflare-sync.js`
-- **Verify `DASH_PASSPHRASE` environment variable is set**
-- Check worker URL is correct in `start-monitoring.sh`
-- Review logs for errors
+```bash
+# Check uploader status
+./scripts/monitor_control.sh status
+
+# Restart uploader
+./scripts/monitor_control.sh restart --no-docker
+
+# Check .env file exists and has correct values
+cat .env | grep -E "BASE_URL|WRITE_TOKEN|DASH_SALT_B64|DASH_PASSPHRASE"
+
+# Review worker health
+curl $BASE_URL/health
+```
 
 ---
 
 ## Environment Variables
+
+### .env File (Auto-created by register-user.sh)
+```bash
+# Cloudflare Worker Configuration
+BASE_URL=https://your-worker.workers.dev
+WRITE_TOKEN=abc123def456...
+DASH_SALT_B64=xyz789...
+DASH_PASSPHRASE=your-chosen-passphrase
+```
+
+⚠️ **Security:** Never commit `.env` to version control! Add to `.gitignore`.
 
 ### Docker Deployment
 ```bash
@@ -618,14 +689,6 @@ USERS_KV=xxx          # KV namespace binding
 ENVIRONMENT=production # Worker environment
 ```
 
-### Upload Script
-```bash
-BASE_URL=http://localhost:38472              # Worker URL
-WRITE_TOKEN=xxx                              # User write token
-DASH_PASSPHRASE=your-passphrase             # Encryption passphrase (REQUIRED!)
-DASH_SALT_B64=xxx                           # User salt (base64)
-```
-
 See [`complete_project_docs.md`](./complete_project_docs.md) for comprehensive configuration details.
 
 ---
@@ -636,8 +699,9 @@ See [`complete_project_docs.md`](./complete_project_docs.md) for comprehensive c
 secure-rb-monitor-public/
 ├── scripts/
 │   ├── prepare_build.sh       # Auto-setup and discovery
-│   ├── register-user.sh       # User registration helper
-│   └── register-with-qr.sh    # QR code registration (mobile)
+│   ├── register-user.sh       # User registration helper (IMPROVED)
+│   ├── register-with-qr.sh    # QR code registration (mobile)
+│   └── monitor_control.sh     # Monitoring control script (NEW)
 ├── worker/
 │   └── mute-mouse-2cd2/       # Cloudflare Worker code
 │       ├── src/               # Worker endpoints
@@ -651,6 +715,7 @@ secure-rb-monitor-public/
 ├── setup-cloudflare.js       # Registration script
 ├── docker-compose.yml        # Container orchestration
 ├── Dockerfile                # Container image
+├── .env                      # User credentials (auto-created, gitignored)
 └── config.json               # Auto-generated watcher config
 ```
 
