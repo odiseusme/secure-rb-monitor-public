@@ -20,6 +20,43 @@ log() { printf '[port-select] %s\n' "$*" >&2; }
 # ---------- Helpers ----------
 has_cmd() { command -v "$1" >/dev/null 2>&1; }
 
+# Validate network names to prevent command injection
+validate_network_name() {
+  local net="$1"
+  if [[ ! "$net" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    log "ERROR: Invalid network name: $net (contains unsafe characters)"
+    return 1
+  fi
+  return 0
+}
+
+# Validate port numbers are in valid range
+validate_port() {
+  local port="$1"
+  if [[ ! "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+    log "ERROR: Invalid port number: $port"
+    return 1
+  fi
+  return 0
+}
+
+# Warn before sudo operations
+warn_sudo_install() {
+  local package="$1"
+  echo ""
+  echo "⚠️  Installing '$package' requires administrator privileges (sudo)"
+  echo "    This will run package manager commands with elevated permissions"
+  echo ""
+  read -r -p "Do you want to proceed with sudo installation? [y/N] " consent
+  consent="${consent,,}"
+  if [[ "$consent" == "y" || "$consent" == "yes" ]]; then
+    return 0
+  else
+    echo "Installation cancelled by user"
+    return 1
+  fi
+}
+
 port_in_use() {
   local p="$1"
   if has_cmd ss; then
@@ -118,6 +155,11 @@ discover_watchers_and_generate_files() {
       local regex='([0-9\.]+):([0-9]+)->'
       if [[ $line =~ $regex ]]; then
         ui_port="${BASH_REMATCH[2]}"
+        # SECURITY FIX: Validate extracted port
+        if ! validate_port "$ui_port"; then
+          log "Skipping invalid port for $ui_name"
+          continue
+        fi
       else
         ui_port="80"
       fi
@@ -143,7 +185,7 @@ discover_watchers_and_generate_files() {
     echo ']'
   } | awk 'BEGIN {print "{\n  \"watchers\": "} {print} END {print "}\n"}' > "$config_file"
 
-  # 2) docker-compose.override.yml — as before
+  # 2) docker-compose.override.yml – as before
   log "Determining watcher networks…"
   declare -A networks=()
   local net
@@ -152,7 +194,14 @@ discover_watchers_and_generate_files() {
       [ -z "$net" ] && continue
       case "$net" in
         bridge|host|none) continue ;;
-        *) networks["$net"]=1 ;;
+        *)
+          # SECURITY FIX: Validate network name before using
+          if validate_network_name "$net"; then
+            networks["$net"]=1
+          else
+            log "Skipping invalid network name: $net"
+          fi
+          ;;
       esac
     done < <(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{println $k}}{{end}}' "$name")
   done
@@ -160,6 +209,7 @@ discover_watchers_and_generate_files() {
   # Create missing external networks
   log "Ensuring external networks exist…"
   for net in "${!networks[@]}"; do
+    # Network name already validated above
     if ! docker network inspect "$net" >/dev/null 2>&1; then
       log "Creating network: $net"
       docker network create "$net" || log "Warning: Could not create network $net"
@@ -200,27 +250,38 @@ main() {
   local port count host_ip display_host ip_lan current MONITOR_URL LAN_URL QR_URL
   if [ -f "$ENV_FILE" ] && grep -qE '^HOST_PORT=' "$ENV_FILE" && [ "$FORCE" -ne 1 ]; then
     current="$(grep -E '^HOST_PORT=' "$ENV_FILE" | tail -1 | cut -d= -f2)"
-    host_ip="$(grep -E '^HOST_IP='  "$ENV_FILE" | tail -1 | cut -d= -f2 || echo 127.0.0.1)"
-    display_host="$host_ip"; [ "$display_host" = "0.0.0.0" ] && display_host="localhost"
-    ip_lan="$(lan_ip_guess || echo 127.0.0.1)"
-    MONITOR_URL="http://${display_host}:${current}/"
-    LAN_URL=""
-    if [ "$ip_lan" != "127.0.0.1" ]; then
-      LAN_URL="http://${ip_lan}:${current}/"
+    # SECURITY FIX: Validate port from .env
+    if ! validate_port "$current"; then
+      log "Invalid port in .env: $current, selecting new port"
+      current=""
     fi
-    echo "Monitor URL: $MONITOR_URL"
-    [ -n "$LAN_URL" ] && echo "LAN URL:     $LAN_URL"
-    QR_URL="$MONITOR_URL"
-    [ -n "$LAN_URL" ] && QR_URL="$LAN_URL"
-    print_qr "$QR_URL"
-    open_browser "$MONITOR_URL"
-  else
+    
+    if [ -n "$current" ]; then
+      host_ip="$(grep -E '^HOST_IP='  "$ENV_FILE" | tail -1 | cut -d= -f2 || echo 127.0.0.1)"
+      display_host="$host_ip"; [ "$display_host" = "0.0.0.0" ] && display_host="localhost"
+      ip_lan="$(lan_ip_guess || echo 127.0.0.1)"
+      MONITOR_URL="http://${display_host}:${current}/"
+      LAN_URL=""
+      if [ "$ip_lan" != "127.0.0.1" ]; then
+        LAN_URL="http://${ip_lan}:${current}/"
+      fi
+      echo "Monitor URL: $MONITOR_URL"
+      [ -n "$LAN_URL" ] && echo "LAN URL:     $LAN_URL"
+      QR_URL="$MONITOR_URL"
+      [ -n "$LAN_URL" ] && QR_URL="$LAN_URL"
+      print_qr "$QR_URL"
+      open_browser "$MONITOR_URL"
+    fi
+  fi
+  
+  # If current is empty (no valid port in .env or FORCE=1), find a new port
+  if [ -z "${current:-}" ]; then
     port="$START_PORT"
     count=0
     if [ "$ALLOW_REUSE_EXISTING" = "1" ] && [ -f "$ENV_FILE" ] && grep -qE '^HOST_PORT=' "$ENV_FILE"; then
       local existing
       existing="$(grep -E '^HOST_PORT=' "$ENV_FILE" | tail -1 | cut -d= -f2)"
-      if [ -n "$existing" ] && ! port_in_use "$existing"; then
+      if [ -n "$existing" ] && validate_port "$existing" && ! port_in_use "$existing"; then
         port="$existing"
       fi
     fi
@@ -260,24 +321,20 @@ main() {
         break
       elif [[ "$qr_reply" == "y" || "$qr_reply" == "yes" ]]; then
         if ! command -v qrencode >/dev/null 2>&1; then
-          while true; do
-            read -r -p "Showing QR code requires 'qrencode'. Would you like to install it now? [Y/n] " install_reply
-            install_reply="${install_reply,,}"
-            if [[ -z "$install_reply" || "$install_reply" == "n" || "$install_reply" == "no" ]]; then
-              echo "Skipping QR code."
-              break 2
-            elif [[ "$install_reply" == "y" || "$install_reply" == "yes" ]]; then
-              if command -v apt-get >/dev/null 2>&1; then
-                sudo apt-get update && sudo apt-get install -y qrencode
-              elif command -v brew >/dev/null 2>&1; then
-                brew install qrencode
-              else
-                echo "Cannot auto-install 'qrencode' (unknown package manager)."
-                break 2
-              fi
+          # SECURITY FIX: Warn before sudo install
+          if warn_sudo_install "qrencode"; then
+            if command -v apt-get >/dev/null 2>&1; then
+              sudo apt-get update && sudo apt-get install -y qrencode
+            elif command -v brew >/dev/null 2>&1; then
+              brew install qrencode
+            else
+              echo "Cannot auto-install 'qrencode' (unknown package manager)."
               break
             fi
-          done
+          else
+            echo "Skipping QR code."
+            break
+          fi
         fi
         if command -v qrencode >/dev/null 2>&1; then
           echo "Monitor (LAN) URL: $QR_URL"
