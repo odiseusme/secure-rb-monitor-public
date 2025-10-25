@@ -766,6 +766,163 @@ Current Status:
 
 🎯 Recommendation: Phase 1 (explain both) for now
 
+2.4 prepare_build.sh Script Improvements (Immediate Priority)
+
+**Priority: High (Security & Code Quality)**  
+**Target: Next development session**
+
+Based on comprehensive script review (October 2024), several critical issues need addressing:
+
+### Critical Security Issues (Must Fix)
+
+**🚨 Privilege Escalation Without User Consent**
+- Location: Lines 266-274 (auto-installation logic)
+- Issue: Script runs `sudo apt-get install` without clear user consent
+- Risk: Unexpected privilege escalation during automated setup
+- Fix Required:
+  ```bash
+  warn_sudo_install() {
+    echo "⚠️  Installing qrencode requires administrator privileges"
+    read -p "Continue with sudo installation? [y/N] " consent
+    [[ "$consent" =~ ^[yY]$ ]] || return 1
+  }
+  ```
+- Acceptance: Clear warning displayed before any sudo operations
+
+**🚨 Potential Command Injection in Network Names**
+- Location: Network creation logic (lines 150-155)
+- Issue: Docker network names not validated before use
+- Risk: Special characters could cause command injection
+- Fix Required:
+  ```bash
+  validate_network_name() {
+    local net="$1"
+    [[ "$net" =~ ^[a-zA-Z0-9_-]+$ ]] || die "Invalid network name: $net"
+  }
+  ```
+- Acceptance: All network names validated against safe character set
+
+**🟡 Port Parsing Without Bounds Checking**
+- Location: Lines 115-120 (regex port extraction)
+- Issue: No validation of extracted port numbers
+- Risk: Invalid port numbers could cause failures
+- Fix Required:
+  ```bash
+  validate_port() {
+    local port="$1"
+    [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ]
+  }
+  ```
+- Acceptance: Port numbers validated before use
+
+### Code Organization Issues (Should Fix)
+
+**🔧 Deeply Nested Interactive Logic**
+- Location: Lines 245-350 (main function)
+- Issue: 173-line main function with 4+ levels of nesting
+- Impact: Hard to test, debug, and maintain
+- Refactor Required:
+  ```bash
+  # Extract to separate functions:
+  handle_qr_interaction() { ... }
+  handle_clipboard_copy() { ... }  
+  handle_monitor_startup() { ... }
+  handle_cloudflare_setup() { ... }
+  ```
+- Acceptance: Each function < 30 lines, single responsibility
+
+**🔧 Global Variable Dependencies**
+- Issue: Functions modify globals without clear interfaces
+- Impact: Hard to test components independently
+- Fix: Pass parameters explicitly, return values clearly
+- Acceptance: Functions testable in isolation
+
+**🔧 Inconsistent Error Handling**
+- Issue: Mix of `|| true`, `exit 1`, and unhandled errors
+- Impact: Unpredictable failure behavior
+- Fix Required:
+  ```bash
+  cleanup_on_error() {
+    log "Cleaning up after error..."
+    # Remove partial files, restore backups
+  }
+  trap cleanup_on_error ERR
+  ```
+- Acceptance: Consistent error handling throughout
+
+### Implementation Plan (2-3 Hour Session)
+
+**Phase 1: Security Fixes (30 minutes)**
+1. Add `validate_network_name()` function and integrate
+2. Add `warn_sudo_install()` with user consent  
+3. Add `validate_port()` for port number checking
+4. Test with various input combinations
+
+**Phase 2: Code Organization (90 minutes)**
+1. Extract `handle_qr_interaction()` function
+2. Extract `handle_monitor_startup()` function  
+3. Extract `handle_cloudflare_setup()` function
+4. Refactor main() to use extracted functions
+5. Test interactive flows work correctly
+
+**Phase 3: Error Handling (30 minutes)**
+1. Add error cleanup trap
+2. Standardize error reporting
+3. Add validation for Docker command outputs
+4. Test error scenarios and recovery
+
+**Phase 4: Testing & Documentation (30 minutes)**
+1. Test with multiple watcher containers
+2. Test error conditions (missing tools, invalid inputs)
+3. Update function documentation
+4. Verify all interactive prompts work correctly
+
+### Test Cases to Verify
+
+```bash
+# Security validation tests
+./prepare_build.sh  # Should handle missing qrencode gracefully
+# With malicious network name in docker output
+# With invalid port numbers in container output
+
+# Interaction tests  
+./prepare_build.sh  # Should handle all prompts correctly
+# User says 'no' to qrencode install
+# User says 'yes' to monitor startup
+# User cancels clipboard copy
+
+# Error recovery tests
+# Docker command failures
+# Network creation failures
+# Permission denied scenarios
+```
+
+### Current Status Assessment
+
+✅ **Core functionality works well**  
+✅ **Good user experience design**  
+✅ **Comprehensive feature set**  
+❌ **Security validation gaps**  
+❌ **Code organization needs improvement**  
+❌ **Error handling inconsistent**
+
+### Files to Modify
+
+- `scripts/prepare_build.sh` (primary target)
+- Consider adding `scripts/prepare_build_test.sh` for validation
+
+### Acceptance Criteria
+
+- [ ] All security warnings addressed
+- [ ] No sudo operations without explicit user consent  
+- [ ] All user inputs validated before system calls
+- [ ] Functions extractable and testable independently
+- [ ] Consistent error handling with cleanup
+- [ ] Interactive flows work on both Linux and macOS
+- [ ] No regression in existing functionality
+
+**Next Action**: Start with Phase 1 security fixes, as these are the highest risk items.
+
 2.3 Security Roadmap (Phased, with acceptance criteria)
 
 Phase A — Immediate hardening (Weeks 1–2)
