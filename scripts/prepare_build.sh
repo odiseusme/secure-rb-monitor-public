@@ -9,13 +9,49 @@ ENV_FILE="${ENV_FILE:-${PROJECT_ROOT}/.env}"
 # ---------- Defaults (overridable via env) ----------
 START_PORT="${START_PORT:-8080}"
 MAX_TRIES="${MAX_TRIES:-25}"
-ALLOW_REUSE_EXISTING="${ALLOW_REUSE_EXISTING:-1}"   # reuse HOST_PORT in .env if still free
-FORCE="${FORCE:-0}"                                 # ignore existing HOST_PORT and pick new
-BIND_ALL="${BIND_ALL:-1}"                           # 1 = bind to 0.0.0.0 instead of 127.0.0.1
-SHOW_QR="${SHOW_QR:-0}"                             # 1 = print a QR code (needs qrencode)
-OPEN_BROWSER="${OPEN_BROWSER:-0}"                   # 1 = open the URL
+ALLOW_REUSE_EXISTING="${ALLOW_REUSE_EXISTING:-1}"
+FORCE="${FORCE:-0}"
+BIND_ALL="${BIND_ALL:-1}"
+SHOW_QR="${SHOW_QR:-0}"
+OPEN_BROWSER="${OPEN_BROWSER:-0}"
+
+# ---------- Error tracking ----------
+SCRIPT_FAILED=0
+TEMP_FILES=()
 
 log() { printf '[port-select] %s\n' "$*" >&2; }
+error() { printf '[ERROR] %s\n' "$*" >&2; }
+warn() { printf '[WARN] %s\n' "$*" >&2; }
+
+# ---------- Error cleanup ----------
+cleanup_on_error() {
+  if [ "$SCRIPT_FAILED" -eq 1 ]; then
+    error "Script failed during execution"
+    error "Cleaning up temporary files..."
+    
+    # Remove any temporary files created
+    for tmp_file in "${TEMP_FILES[@]}"; do
+      if [ -f "$tmp_file" ]; then
+        rm -f "$tmp_file" && log "Removed: $tmp_file" || warn "Could not remove: $tmp_file"
+      fi
+    done
+    
+    # Restore .env backup if it exists
+    if [ -f "${ENV_FILE}.bak" ]; then
+      local backup_age=$(($(date +%s) - $(stat -c %Y "${ENV_FILE}.bak" 2>/dev/null || stat -f %m "${ENV_FILE}.bak" 2>/dev/null || echo 0)))
+      # Only restore if backup is less than 60 seconds old (from this run)
+      if [ "$backup_age" -lt 60 ]; then
+        warn "Restoring .env from backup..."
+        cp "${ENV_FILE}.bak" "$ENV_FILE" && log ".env restored" || error "Could not restore .env"
+      fi
+    fi
+    
+    error "Cleanup complete. Please check errors above and try again."
+  fi
+}
+
+trap 'SCRIPT_FAILED=1; cleanup_on_error' ERR
+trap 'cleanup_on_error' EXIT
 
 # ---------- Helpers ----------
 has_cmd() { command -v "$1" >/dev/null 2>&1; }
@@ -24,7 +60,7 @@ has_cmd() { command -v "$1" >/dev/null 2>&1; }
 validate_network_name() {
   local net="$1"
   if [[ ! "$net" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-    log "ERROR: Invalid network name: $net (contains unsafe characters)"
+    error "Invalid network name: $net (contains unsafe characters)"
     return 1
   fi
   return 0
@@ -34,7 +70,7 @@ validate_network_name() {
 validate_port() {
   local port="$1"
   if [[ ! "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
-    log "ERROR: Invalid port number: $port"
+    error "Invalid port number: $port"
     return 1
   fi
   return 0
@@ -52,9 +88,25 @@ warn_sudo_install() {
   if [[ "$consent" == "y" || "$consent" == "yes" ]]; then
     return 0
   else
-    echo "Installation cancelled by user"
+    log "Installation cancelled by user"
     return 1
   fi
+}
+
+# Check if Docker is available and running
+check_docker() {
+  if ! has_cmd docker; then
+    error "Docker command not found. Please install Docker first."
+    return 1
+  fi
+  
+  if ! docker info >/dev/null 2>&1; then
+    error "Docker daemon is not running or not accessible."
+    error "Please start Docker or check permissions (may need to add user to docker group)."
+    return 1
+  fi
+  
+  return 0
 }
 
 port_in_use() {
@@ -92,7 +144,7 @@ print_qr() {
   [ "$SHOW_QR" = "1" ] || return 0
   if has_cmd qrencode; then
     echo
-    qrencode -t ANSIUTF8 "$url" || true
+    qrencode -t ANSIUTF8 "$url" || warn "QR code generation failed"
     echo
   else
     log "qrencode not found; skipping QR."
@@ -134,9 +186,17 @@ get_host_port_for_watcher() {
 # ---------- Watcher discovery + files ----------
 discover_watchers_and_generate_files() {
   log "Discovering watcher UI containers…"
+  
+  # Check Docker is available
+  if ! check_docker; then
+    error "Cannot discover watchers without Docker"
+    echo 0
+    return 1
+  fi
+  
   # Get all running containers ending in -ui-1
   local ui_containers
-  ui_containers=$(docker ps --format '{{.Names}}' | awk '/-ui-1$/')
+  ui_containers=$(docker ps --format '{{.Names}}' 2>/dev/null | awk '/-ui-1$/' || true)
 
   if [ -z "$ui_containers" ]; then
     log "No watcher UIs found; not generating config.json."
@@ -145,19 +205,27 @@ discover_watchers_and_generate_files() {
   fi
 
   local config_file="${PROJECT_ROOT}/config.json"
+  TEMP_FILES+=("$config_file")
+  
   log "Generating ${config_file}…"
   {
     echo '['
     local first=1
     for ui_name in $ui_containers; do
       local line ui_port
-      line=$(docker ps --format '{{.Names}} {{.Ports}}' | grep "^$ui_name ")
+      line=$(docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep "^$ui_name " || true)
+      
+      if [ -z "$line" ]; then
+        warn "Could not get port info for $ui_name, skipping"
+        continue
+      fi
+      
       local regex='([0-9\.]+):([0-9]+)->'
       if [[ $line =~ $regex ]]; then
         ui_port="${BASH_REMATCH[2]}"
-        # SECURITY FIX: Validate extracted port
+        # SECURITY: Validate extracted port
         if ! validate_port "$ui_port"; then
-          log "Skipping invalid port for $ui_name"
+          warn "Invalid port for $ui_name, skipping"
           continue
         fi
       else
@@ -185,25 +253,33 @@ discover_watchers_and_generate_files() {
     echo ']'
   } | awk 'BEGIN {print "{\n  \"watchers\": "} {print} END {print "}\n"}' > "$config_file"
 
-  # 2) docker-compose.override.yml – as before
+  # 2) docker-compose.override.yml
   log "Determining watcher networks…"
   declare -A networks=()
   local net
   for name in $ui_containers; do
+    local inspect_output
+    inspect_output=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{println $k}}{{end}}' "$name" 2>/dev/null || true)
+    
+    if [ -z "$inspect_output" ]; then
+      warn "Could not inspect networks for $name, skipping"
+      continue
+    fi
+    
     while read -r net; do
       [ -z "$net" ] && continue
       case "$net" in
         bridge|host|none) continue ;;
         *)
-          # SECURITY FIX: Validate network name before using
+          # SECURITY: Validate network name before using
           if validate_network_name "$net"; then
             networks["$net"]=1
           else
-            log "Skipping invalid network name: $net"
+            warn "Invalid network name: $net, skipping"
           fi
           ;;
       esac
-    done < <(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{println $k}}{{end}}' "$name")
+    done <<< "$inspect_output"
   done
 
   # Create missing external networks
@@ -212,11 +288,16 @@ discover_watchers_and_generate_files() {
     # Network name already validated above
     if ! docker network inspect "$net" >/dev/null 2>&1; then
       log "Creating network: $net"
-      docker network create "$net" || log "Warning: Could not create network $net"
+      if ! docker network create "$net" 2>/dev/null; then
+        error "Failed to create network: $net"
+        # Continue anyway - might not be fatal
+      fi
     fi
   done
 
   local override_file="${PROJECT_ROOT}/docker-compose.override.yml"
+  TEMP_FILES+=("$override_file")
+  
   log "Generating ${override_file}…"
   {
     # No 'version:' header (Compose v2 ignores/complains)
@@ -233,6 +314,7 @@ discover_watchers_and_generate_files() {
       echo "    external: true"
     done
   } > "$override_file"
+  
   log "Wrote networks to ${override_file}"
   echo $(echo "$ui_containers" | wc -w)
 }
@@ -240,6 +322,8 @@ discover_watchers_and_generate_files() {
 
 # ---------- Main ----------
 main() {
+  log "Starting prepare_build.sh..."
+  
   set_docker_gid
   maybe_bind_all
 
@@ -250,9 +334,9 @@ main() {
   local port count host_ip display_host ip_lan current MONITOR_URL LAN_URL QR_URL
   if [ -f "$ENV_FILE" ] && grep -qE '^HOST_PORT=' "$ENV_FILE" && [ "$FORCE" -ne 1 ]; then
     current="$(grep -E '^HOST_PORT=' "$ENV_FILE" | tail -1 | cut -d= -f2)"
-    # SECURITY FIX: Validate port from .env
+    # SECURITY: Validate port from .env
     if ! validate_port "$current"; then
-      log "Invalid port in .env: $current, selecting new port"
+      warn "Invalid port in .env: $current, selecting new port"
       current=""
     fi
     
@@ -289,8 +373,8 @@ main() {
       log "Port $port busy; next."
       port=$((port+1)); count=$((count+1))
       if [ "$count" -ge "$MAX_TRIES" ]; then
-        log "No free port found starting from ${START_PORT} (tried ${MAX_TRIES})."
-        exit 1
+        error "No free port found starting from ${START_PORT} (tried ${MAX_TRIES})."
+        return 1
       fi
     done
     update_env_kv "HOST_PORT" "$port"
@@ -321,25 +405,31 @@ main() {
         break
       elif [[ "$qr_reply" == "y" || "$qr_reply" == "yes" ]]; then
         if ! command -v qrencode >/dev/null 2>&1; then
-          # SECURITY FIX: Warn before sudo install
+          # SECURITY: Warn before sudo install
           if warn_sudo_install "qrencode"; then
             if command -v apt-get >/dev/null 2>&1; then
-              sudo apt-get update && sudo apt-get install -y qrencode
+              sudo apt-get update && sudo apt-get install -y qrencode || {
+                error "Failed to install qrencode"
+                break
+              }
             elif command -v brew >/dev/null 2>&1; then
-              brew install qrencode
+              brew install qrencode || {
+                error "Failed to install qrencode"
+                break
+              }
             else
-              echo "Cannot auto-install 'qrencode' (unknown package manager)."
+              error "Cannot auto-install 'qrencode' (unknown package manager)."
               break
             fi
           else
-            echo "Skipping QR code."
+            log "Skipping QR code."
             break
           fi
         fi
         if command -v qrencode >/dev/null 2>&1; then
           echo "Monitor (LAN) URL: $QR_URL"
           echo " "
-          qrencode -t ansiutf8 -s 1 -l H "$QR_URL"
+          qrencode -t ansiutf8 -s 1 -l H "$QR_URL" || warn "QR generation failed"
           echo "  "
           # --- Copy-to-clipboard prompt ---
           if command -v xclip >/dev/null 2>&1; then
@@ -349,8 +439,7 @@ main() {
               if [[ -z "$clip_reply" || "$clip_reply" == "n" || "$clip_reply" == "no" ]]; then
                 break
               elif [[ "$clip_reply" == "y" || "$clip_reply" == "yes" ]]; then
-                echo -n "$QR_URL" | xclip -selection clipboard
-                echo "Copied to clipboard!"
+                echo -n "$QR_URL" | xclip -selection clipboard && log "Copied to clipboard!" || warn "Clipboard copy failed"
                 break
               fi
             done
@@ -361,8 +450,7 @@ main() {
               if [[ -z "$clip_reply" || "$clip_reply" == "n" || "$clip_reply" == "no" ]]; then
                 break
               elif [[ "$clip_reply" == "y" || "$clip_reply" == "yes" ]]; then
-                echo -n "$QR_URL" | pbcopy
-                echo "Copied to clipboard!"
+                echo -n "$QR_URL" | pbcopy && log "Copied to clipboard!" || warn "Clipboard copy failed"
                 break
               fi
             done
@@ -378,15 +466,22 @@ main() {
       read -r -p "Would you like to start the monitor now (docker compose up -d --build)? [y/N] " runmon_reply
       runmon_reply="${runmon_reply,,}"
       if [[ -z "$runmon_reply" || "$runmon_reply" == "n" || "$runmon_reply" == "no" ]]; then
-        echo "Monitor not started. You can run it later with 'docker compose up -d --build'."
+        log "Monitor not started. You can run it later with 'docker compose up -d --build'."
         break
       elif [[ "$runmon_reply" == "y" || "$runmon_reply" == "yes" ]]; then
+        log "Starting monitor with docker compose..."
         if command -v docker-compose >/dev/null 2>&1; then
-          docker-compose up -d --build
+          docker-compose up -d --build || {
+            error "Failed to start monitor with docker-compose"
+            break
+          }
         else
-          docker compose up -d --build
+          docker compose up -d --build || {
+            error "Failed to start monitor with docker compose"
+            break
+          }
         fi
-        echo "Monitor started."
+        log "Monitor started successfully."
         break
       fi
     done
@@ -396,13 +491,20 @@ main() {
       read -r -p "Would you like to set up encrypted Cloudflare sync? [y/N] " cf_reply
       cf_reply="${cf_reply,,}"
       if [[ "$cf_reply" == "y" || "$cf_reply" == "yes" ]]; then
-        ./scripts/register-user.sh
+        if [ -f "./scripts/register-user.sh" ]; then
+          ./scripts/register-user.sh || warn "Registration script exited with error"
+        else
+          error "Registration script not found at ./scripts/register-user.sh"
+        fi
         break
       else
         break
       fi
     done
   fi
+  
+  log "prepare_build.sh completed successfully"
+  SCRIPT_FAILED=0  # Mark as successful
 }
 
 main "$@"
