@@ -929,6 +929,135 @@ Based on comprehensive script review (October 2024), several critical issues nee
 
 **Next Action**: Start with Phase 1 security fixes, as these are the highest risk items.
 
+2.5 Security Hardening - Genuine Gaps Analysis (REVISED)
+
+**Priority: High (Incremental improvements)**  
+**Target: Immediate (focused on actual gaps)**  
+**Status: Revised after README review - removed already-implemented items**
+
+After comprehensive review, many security features are **already implemented and documented**. This section focuses only on genuine gaps and incremental improvements.
+
+### Already Implemented ✅ (Verified Oct 26, 2025):
+
+- **✅ Rate Limiting:** Comprehensive implementation with 30 reads/hour per user, KV-based tracking
+- **✅ PBKDF2 Iterations:** Correctly set to 100,000 iterations as documented
+- **✅ Container Security (Partial):** Read-only filesystem, dropped capabilities, restart policies
+- **✅ Passphrase Validation:** 8-character minimum enforced with confirmation
+- **✅ HTTPS Enforcement:** Automatically enforced in production
+- **✅ Network Isolation:** Automatic watcher network discovery and isolation
+
+### Genuine Gaps Requiring Implementation ❌ (Verified Missing):
+
+- **❌ Security Headers:** No CSP, X-Frame-Options, or other security headers implemented
+- **❌ Container User Configuration:** Dockerfile has conflicting user statements (monitor vs node)
+- **❌ Passphrase Storage Policy:** Currently prompts to save in .env by default
+
+## Verified Implementation Gaps (Prioritized by Impact):
+
+### Group 1: Critical Security Headers (MISSING ENTIRELY) 🔴
+
+**🔐 Security Headers Implementation** 
+- **Current State:** NO security headers implemented in Cloudflare Worker
+- **Required:** CSP, X-Frame-Options, HSTS, X-Content-Type-Options, Referrer-Policy
+- **Files:** `worker/mute-mouse-2cd2/src/index.ts`
+- **Impact:** High - prevents XSS, clickjacking, protocol downgrade attacks
+- **Time:** 3-5 hours (includes testing across all routes)
+
+### Group 2: Container Configuration Cleanup 🟡
+
+**🔧 Docker User Standardization**
+- **Current State:** Dockerfile has conflicting USER statements (monitor and node users)
+- **Required:** Single consistent non-root user configuration
+- **Files:** `Dockerfile`, docker-compose configurations
+- **Impact:** Medium - ensures consistent security posture
+- **Time:** 2-2.5 hours (includes testing all components)
+
+### Group 1: Security Policy Refinements (No Breaking Changes)
+
+**🔐 PBKDF2 Iteration Enhancement**
+- **Current State:** 100,000 iterations (documented in README)
+- **Improvement:** Increase to 300,000 for new encryptions only
+- **Files:** `cloudflare-sync.js`, `public/dashboard.js`
+- **Implementation:** Add version field to ciphertext envelope, maintain backward compatibility
+- **Time:** 2-3 hours
+
+**🔑 Passphrase Policy Improvement**
+- **Current State:** 8-character minimum (implemented and working)
+- **Improvement:** Recommend 12+ characters in guidance (keep 8 minimum for compatibility)
+- **Files:** `scripts/register-user.sh`, `public/dashboard.js`, `README.md`
+- **Implementation:** Update recommendations and hints, no breaking changes
+- **Time:** 1 hour
+
+**🚫 Passphrase Storage Default**
+- **Current State:** Prompts user to save passphrase in .env
+- **Improvement:** Default to "no" for better security
+- **Files:** `setup-cloudflare.js`, `scripts/register-user.sh`
+- **Implementation:** Change default prompt behavior
+- **Time:** 30 minutes
+
+### Group 2: Worker Security Enhancements
+
+**� Complete Security Headers Implementation**
+- **Current State:** CSP headers implemented (documented)
+- **Improvement:** Add full security header set
+- **Headers Needed:** X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
+- **Files:** `worker/mute-mouse-2cd2/src/index.ts`
+- **Time:** 1-2 hours
+
+**⏱️ Rate Limiting Configuration Enhancement**
+- **Current State:** Rate limiting enabled by default
+- **Improvement:** Make thresholds explicit and conservative, add Retry-After headers
+- **Files:** `worker/mute-mouse-2cd2/src/config.ts`
+- **Implementation:** Document current thresholds, add response headers
+- **Time:** 1-2 hours
+
+**📝 Logging Hygiene Audit**
+- **Current State:** Unknown - needs verification
+- **Improvement:** Ensure no sensitive data in logs
+- **Files:** `worker/mute-mouse-2cd2/src/` (all logging calls)
+- **Implementation:** Audit and redact if needed
+- **Time:** 1-2 hours
+
+### Group 3: Error Handling and UX
+
+**🛡️ Enhanced Decrypt Error Handling**
+- **Current State:** Basic error handling
+- **Improvement:** Fail closed with clear UI, no stack traces
+- **Files:** `public/dashboard.js`
+- **Implementation:** Improve error messages and UI feedback
+- **Time:** 1 hour
+
+**🤐 Script Output Hygiene**
+- **Current State:** Needs audit
+- **Improvement:** Ensure no secrets in script output/logs
+- **Files:** `scripts/monitor_control.sh`, all scripts
+- **Implementation:** Audit and mask sensitive output
+- **Time:** 1 hour
+
+### Implementation Priority (Revised):
+
+**🚨 Day 1 (Immediate Security Gaps):**
+1. Passphrase storage default (30 min)
+2. Script output hygiene (1 hour)
+3. Complete security headers (1-2 hours)
+
+**📅 Day 2 (Enhancements):**
+4. Rate limiting enhancement (1-2 hours)
+5. Logging hygiene audit (1-2 hours)
+6. Decrypt error handling (1 hour)
+
+**📈 Day 3 (Crypto Improvements):**
+7. PBKDF2 iteration increase (2-3 hours)
+8. Passphrase policy updates (1 hour)
+
+**Total Realistic Time:** 8.5-12.5 hours (substantial reduction from original estimate)
+
+### Key Insight:
+
+RBMonitor already has **excellent security foundations**. The focus should be on **incremental enhancements** rather than fundamental security implementations. Many items in the original security suggestions were already implemented but not explicitly documented in the security review context.
+
+> **Quick Reference:** For a focused, actionable task list based on this analysis, see [`RBMonitor_Development_Roadmap_REVISED.md`](./RBMonitor_Development_Roadmap_REVISED.md)
+
 2.3 Security Roadmap (Phased, with acceptance criteria)
 
 Phase A — Immediate hardening (Weeks 1–2)

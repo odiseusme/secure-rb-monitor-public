@@ -502,29 +502,43 @@ Baseline GitHub Actions workflow included. Customize for your needs.
 
 ## 🛡️ Security Features
 
-### No Privileged Access
+### ✅ Currently Implemented Security Features
+
+**No Privileged Access:**
 - ✅ No Docker socket mounting
 - ✅ API-only watcher communication
 - ✅ Read-only container filesystem
 - ✅ Minimal Linux capabilities (drops ALL, adds only SETUID/SETGID)
-- ✅ Non-root user (UID 1000)
+- 🔄 Non-root user configuration (needs cleanup - currently has conflicting user statements)
 
-### Network Isolation
+**Network Isolation:**
 - ✅ Automatic watcher network discovery
 - ✅ No host network access
 - ✅ Isolated from non-watcher networks
 
-### Zero-Knowledge Encryption
+**Zero-Knowledge Encryption:**
 - ✅ Client-side encryption/decryption only
 - ✅ Server never sees passphrases or plaintext
 - ✅ Per-user salts prevent attacks
-- ✅ Industry-standard crypto (AES-GCM, PBKDF2)
+- ✅ Industry-standard crypto (AES-GCM, PBKDF2-SHA256, 100,000 iterations)
 
-### Secure Defaults
+**Production Security Defaults:**
 - ✅ HTTPS enforced in production
-- ✅ CSP headers prevent XSS
 - ✅ Invitation-based registration
-- ✅ Rate limiting enabled by default
+- ✅ Rate limiting enabled by default (30 reads/hour per user)
+- ✅ Passphrase minimum length (8 chars) with confirmation
+- 🔄 Security headers (CSP, X-Frame-Options, etc.) - **planned enhancement**
+
+### 🔄 Security Enhancements in Progress
+
+**Planned Improvements:**
+- 🔄 Increase PBKDF2 iterations (100k → 300k) with backward compatibility
+- 🔄 Complete security header set (beyond current CSP)
+- 🔄 Enhanced passphrase recommendations (12+ characters)
+- 🔄 Improved error handling and logging hygiene
+- 🔄 Default to not storing passphrases in .env files
+
+> **Note:** The security foundation is solid and production-ready. Planned enhancements focus on incremental improvements and defense-in-depth.
 
 ---
 
