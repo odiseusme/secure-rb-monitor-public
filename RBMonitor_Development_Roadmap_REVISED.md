@@ -12,11 +12,11 @@
 
 | Task | Files | Time | Status | Description |
 |------|-------|------|--------|-------------|
-| **Implement security headers** | `worker/mute-mouse-2cd2/src/index.ts` | 3-5 hours | ❌ **MISSING** | NO security headers found despite README claims - implement CSP, X-Frame-Options, HSTS, X-Content-Type-Options |
+| ~~**Implement security headers**~~ | `worker/mute-mouse-2cd2/src/index.ts`, `security.ts` | ~~3-5 hours~~ | ✅ **COMPLETED** | Comprehensive HTTP security headers implemented with environment auto-detection, CORS policies, and static asset caching |
 | **Fix container user conflicts** | `Dockerfile`, docker configs | 2-2.5 hours | 🟡 **BROKEN** | Dockerfile has conflicting USER statements (monitor vs node) |
 | **Disable passphrase storage default** | `setup-cloudflare.js`, `scripts/register-user.sh` | 30 min | ❌ **INSECURE** | Currently defaults to saving passphrase in .env - change to "n" |
 
-**Subtotal: 5.5-8 hours**
+**Subtotal: 2.5-3 hours** (security headers completed, only container fixes and passphrase default remain)
 
 ### Priority 2: Verified Working Features (No Action Needed)
 

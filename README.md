@@ -527,13 +527,12 @@ Baseline GitHub Actions workflow included. Customize for your needs.
 - ✅ Invitation-based registration
 - ✅ Rate limiting enabled by default (30 reads/hour per user)
 - ✅ Passphrase minimum length (8 chars) with confirmation
-- 🔄 Security headers (CSP, X-Frame-Options, etc.) - **planned enhancement**
+- ✅ Comprehensive security headers (CSP, HSTS, X-Frame-Options, CORS policies)
 
 ### 🔄 Security Enhancements in Progress
 
 **Planned Improvements:**
 - 🔄 Increase PBKDF2 iterations (100k → 300k) with backward compatibility
-- 🔄 Complete security header set (beyond current CSP)
 - 🔄 Enhanced passphrase recommendations (12+ characters)
 - 🔄 Improved error handling and logging hygiene
 - 🔄 Default to not storing passphrases in .env files

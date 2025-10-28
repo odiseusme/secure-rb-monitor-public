@@ -3,31 +3,102 @@
 ## Supported Versions
 Current `main` and latest tagged release (e.g. v0.1.x). Older tags may not receive fixes.
 
-## Reporting a Vulnerability
-1. DO NOT open a public issue for an unpatched vulnerability.
-2. Email: security@rosenbridge.example (replace with correct contact)  
-   Include:
-   - Description & impact
-   - Reproduction steps / PoC
-   - Suggested remediation (if known)
+## Implemented Security Features
 
-Acknowledgment within 5 business days.
+### HTTP Security Headers (Implemented: October 2025)
+The Cloudflare Worker implements comprehensive security headers:
+
+- **Content-Security-Policy**: Prevents XSS and injection attacks with strict resource loading policies
+- **Strict-Transport-Security (HSTS)**: Enforces HTTPS in production (max-age=1 year, includeSubDomains, preload)
+- **X-Frame-Options**: Prevents clickjacking attacks (DENY)
+- **X-Content-Type-Options**: Prevents MIME type sniffing (nosniff)
+- **Referrer-Policy**: Controls referrer information leakage (no-referrer)
+- **Permissions-Policy**: Disables unnecessary browser features (camera, microphone, geolocation, payment)
+- **Cross-Origin-Opener-Policy**: Process isolation (same-origin)
+- **Cross-Origin-Resource-Policy**: Additional origin isolation (same-origin)
+
+Environment-aware implementation:
+- Development (localhost): All headers except HSTS
+- Production: Full header set including HSTS
+
+### Zero-Knowledge Encryption
+- Client-side encryption using Web Crypto API (AES-GCM)
+- PBKDF2 key derivation (100,000 iterations)
+- Server never sees unencrypted data or passphrases
+
+### Access Control
+- Invitation-based user registration
+- Rate limiting: 30 reads/hour per user
+- Token-based authentication for data updates
+
+### Static Asset Optimization
+- Cache-Control headers for performance
+- Long-term caching for immutable assets (icons: 1 year)
+- Short-term caching for updatable assets (CSS/manifest: 1 day)
+
+## Reporting a Vulnerability
+1. **DO NOT** open a public issue for an unpatched vulnerability.
+2. **Email**: odiseusme@users.noreply.github.com
+   
+   Include:
+   - Description & impact assessment
+   - Reproduction steps / Proof of Concept
+   - Suggested remediation (if known)
+   - Your contact information for follow-up
+
+**Response timeline**: Acknowledgment within 5 business days.
 
 ## Handling Process
 - Triage & severity assessment
-- Patch preparation in private
+- Patch preparation in private branch
 - Coordinated disclosure timing (if applicable)
 - Public release notes outlining impact & fix
+- Security advisory published when appropriate
 
-## Hardening Roadmap
+## Security Roadmap
+
+### Completed ✅
+- Comprehensive HTTP security headers
+- Zero-knowledge encryption architecture
+- Rate limiting implementation
+- Container hardening (non-root user, read-only filesystem, dropped capabilities)
+
+### Planned Enhancements 🔄
+- Increase PBKDF2 iterations (100k → 300k) with backward compatibility
+- Enhanced passphrase strength recommendations (12+ characters)
 - Automated dependency scanning (Dependabot)
-- Secret scanning
-- Runtime health endpoint
-- Structured logging + redaction
-- Test suite including security edge cases
+- Secret scanning in CI/CD
+- Structured logging with PII redaction
+- Comprehensive security test suite
 
 ## Out of Scope
 - Vulnerabilities in unmodified upstream dependencies
-- Social engineering or hosting platform issues
+- Social engineering attacks
+- Hosting platform (Cloudflare Workers) security issues
+- Physical security of user devices
 
-Thank you for helping keep the project safe.
+## Security Best Practices for Users
+
+### For Dashboard Users:
+- Use a strong, unique passphrase (12+ characters recommended, 8 minimum enforced)
+- Never share your passphrase
+- Access dashboard only over HTTPS
+- Verify the dashboard URL before entering credentials
+
+### For Server Operators:
+- Keep dependencies updated
+- Rotate API keys and tokens regularly
+- Monitor rate limit logs for suspicious activity
+- Use invitation codes securely (don't share publicly)
+
+## Acknowledgments
+Security improvements informed by:
+- OWASP Secure Headers Project
+- Cloudflare Workers Security Best Practices
+- Web Crypto API specifications
+
+---
+
+**Thank you for helping keep RBMonitor secure!**
+
+*Last Updated: October 28, 2025*
