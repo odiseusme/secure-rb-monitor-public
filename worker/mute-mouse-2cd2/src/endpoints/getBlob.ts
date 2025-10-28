@@ -2,6 +2,7 @@ import { OpenAPIRoute } from "chanfana";
 import { Context } from "hono";
 import { z } from "zod";
 
+import { safeLogError } from "../utils/redact";
 export class GetBlob extends OpenAPIRoute {
   schema = {
     tags: ["Data Management"],
@@ -132,7 +133,7 @@ export class GetBlob extends OpenAPIRoute {
       });
 
     } catch (error) {
-      console.error("Error retrieving blob:", error);
+      safeLogError(error, { context: "Error retrieving blob:" });
       return c.json({ error: "Internal server error" }, 500);
     }
   }

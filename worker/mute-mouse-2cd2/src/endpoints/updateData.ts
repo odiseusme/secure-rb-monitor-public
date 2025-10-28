@@ -2,6 +2,7 @@ import { OpenAPIRoute } from "chanfana";
 import { Context } from "hono";
 import { z } from "zod";
 
+import { safeLogError } from "../utils/redact";
 export class UpdateData extends OpenAPIRoute {
   schema = {
     tags: ["Data Management"],
@@ -114,14 +115,14 @@ export class UpdateData extends OpenAPIRoute {
 
 // --- Check revision monotonicity (WITH DEBUG)
       const currentRevision = userData.revision || 0;
-      console.log(`[DEBUG] Version check: incoming=${version}, stored=${currentRevision}, userData:`, JSON.stringify(userData, null, 2));
+      // DEBUG: Version check (redacted for security)
       
       if (version <= currentRevision) {
-        console.log(`[DEBUG] REJECTING: ${version} <= ${currentRevision}`);
+        // DEBUG:  REJECTING: ${version} <= ${currentRevision} (redacted for security)
         return c.json({ error: "Stale revision" }, 409);
       }
       
-      console.log(`[DEBUG] ACCEPTING: ${version} > ${currentRevision}`);
+      // DEBUG:  ACCEPTING: ${version} > ${currentRevision} (redacted for security)
       // --- Limit payload size (25MB)
       const approxSize = JSON.stringify(body).length;
       if (approxSize > 25 * 1024 * 1024) {
@@ -157,7 +158,7 @@ export class UpdateData extends OpenAPIRoute {
 
       return c.json({ success: true, revision: version });
     } catch (error) {
-      console.error("Error updating data:", error);
+      safeLogError(error, { context: "Error updating data:" });
       return c.json({ error: "Internal server error" }, 500);
     }
   }

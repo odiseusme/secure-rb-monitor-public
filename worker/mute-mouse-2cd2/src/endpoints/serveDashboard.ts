@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import { DASHBOARD_HTML } from "../assets";
 
+import { safeLogError } from "../utils/redact";
 export const ServeDashboard = async (c: Context) => {
   try {
     const { publicId } = c.req.param();
@@ -21,7 +22,7 @@ export const ServeDashboard = async (c: Context) => {
       "Content-Type": "text/html; charset=utf-8",
     });
   } catch (err) {
-    console.error("Error serving dashboard:", err);
+    safeLogError(err, { context: "serveDashboard" });
     return c.html(getErrorPage("Internal server error"), 500);
   }
 };

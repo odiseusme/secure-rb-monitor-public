@@ -1,6 +1,7 @@
 import { OpenAPIRoute } from "chanfana";
 import { Context } from "hono";
 import { z } from "zod";
+import { safeLogError } from "../utils/redact";
 
 export class RegisterUser extends OpenAPIRoute {
   schema = {
@@ -50,7 +51,7 @@ export class RegisterUser extends OpenAPIRoute {
   async handle(c: Context) {
     try {
       const { inviteCode } = await c.req.json();
-
+      
       if (!inviteCode || typeof inviteCode !== 'string') {
         return c.json({ error: "Invalid invitation code format" }, 400);
       }
@@ -62,7 +63,7 @@ export class RegisterUser extends OpenAPIRoute {
       }
 
       const inviteData = JSON.parse(inviteDataRaw);
-
+      
       // Check if already used
       if (inviteData.used) {
         return c.json({ error: "Invitation code already used" }, 409);
@@ -79,7 +80,7 @@ export class RegisterUser extends OpenAPIRoute {
       const publicId = this.generateId(32);
       const writeToken = this.generateId(64);
       const salt = this.generateId(32);
-
+      
       // KDF parameters for PBKDF2-SHA256
       const kdfParams = {
         algorithm: "PBKDF2",
@@ -106,7 +107,7 @@ export class RegisterUser extends OpenAPIRoute {
       inviteData.used = true;
       inviteData.usedAt = new Date().toISOString();
       inviteData.usedBy = publicId;
-
+      
       // Store everything atomically
       await Promise.all([
         c.env.USERS_KV.put(`user:${publicId}`, JSON.stringify(userMetadata)),
@@ -121,11 +122,11 @@ export class RegisterUser extends OpenAPIRoute {
         writes: 0,
         lastReset: new Date().toISOString(),
       }), { expirationTtl: 3600 });
-
+      
       // Get the Worker's URL for dashboard link
       const workerUrl = new URL(c.req.url).origin;
       const dashboardUrl = `${workerUrl}/d/${publicId}`;
-
+      
       return c.json({
         success: true,
         publicId,
@@ -136,7 +137,7 @@ export class RegisterUser extends OpenAPIRoute {
       });
 
     } catch (error) {
-      console.error("Error registering user:", error);
+      safeLogError(error, { context: "registerUser" });
       return c.json({ error: "Internal server error" }, 500);
     }
   }

@@ -61,6 +61,26 @@ jobs:
           # Uncomment and configure your testing framework:
           # npm test
 
+      # Run credential leak hygiene scan
+      - name: Run credential leak scanner
+        run: |
+          echo "🔍 Running credential leak hygiene scan..."
+          chmod +x scripts/test-log-hygiene.sh
+          ./scripts/test-log-hygiene.sh
+
+      # Check for accidentally committed sensitive files  
+      - name: Check for sensitive files
+        run: |
+          echo "🔍 Checking for accidentally committed sensitive files..."
+          
+          # Check for .env files (should be gitignored)
+          if find . -name ".env" -not -path "./.git/*" | grep -v ".env.example" | head -1; then
+            echo "❌ .env files found - these should be gitignored"
+            exit 1
+          else
+            echo "✅ No .env files in repository"
+          fi
+
       # Security checks (e.g., npm audit)
       - name: Security audit
         run: |

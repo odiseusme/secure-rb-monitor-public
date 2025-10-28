@@ -2,6 +2,7 @@ import { OpenAPIRoute } from "chanfana";
 import { Context } from "hono";
 import { z } from "zod";
 
+import { safeLogError } from "../utils/redact";
 export class CreateInvite extends OpenAPIRoute {
   schema = {
     tags: ["Admin"],
@@ -89,7 +90,7 @@ export class CreateInvite extends OpenAPIRoute {
       });
 
     } catch (error) {
-      console.error("Error creating invitations:", error);
+      safeLogError(error, { context: "Error creating invitations:" });
       return c.json({ error: "Internal server error" }, 500);
     }
   }

@@ -2,6 +2,7 @@ import { OpenAPIRoute } from "chanfana";
 import { Context } from "hono";
 import { z } from "zod";
 
+import { safeLogError } from "../utils/redact";
 export class DeleteUser extends OpenAPIRoute {
   schema = {
     tags: ["User Management"],
@@ -87,7 +88,7 @@ export class DeleteUser extends OpenAPIRoute {
       });
 
     } catch (error) {
-      console.error("Error deleting user:", error);
+      safeLogError(error, { context: "Error deleting user:" });
       return c.json({ error: "Internal server error" }, 500);
     }
   }

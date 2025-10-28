@@ -2,6 +2,7 @@ import { OpenAPIRoute } from "chanfana";
 import { Context } from "hono";
 import { z } from "zod";
 
+import { safeLogError } from "../utils/redact";
 export class AdminStats extends OpenAPIRoute {
   schema = {
     tags: ["Admin"],
@@ -148,7 +149,7 @@ export class AdminStats extends OpenAPIRoute {
       });
 
     } catch (error) {
-      console.error("Error getting admin stats:", error);
+      safeLogError(error, { context: "Error getting admin stats:" });
       return c.json({ error: "Internal server error" }, 500);
     }
   }
@@ -167,7 +168,7 @@ export class AdminStats extends OpenAPIRoute {
             users.push(JSON.parse(userData));
           }
         } catch (e) {
-          console.error(`Error parsing user data for ${key.name}:`, e);
+          safeLogError(e, { context: "Error parsing user data", key: key.name });
         }
       }
       
@@ -191,7 +192,7 @@ export class AdminStats extends OpenAPIRoute {
             invites.push(JSON.parse(inviteData));
           }
         } catch (e) {
-          console.error(`Error parsing invite data for ${key.name}:`, e);
+          safeLogError(e, { context: "Error parsing invite data", key: key.name });
         }
       }
       

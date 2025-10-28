@@ -21,6 +21,16 @@ Environment-aware implementation:
 - Development (localhost): All headers except HSTS
 - Production: Full header set including HSTS
 
+### Credential Protection & Logging Security (Implemented: October 2025)
+- **Secure Passphrase Storage**: Default OFF with double confirmation for persistent passphrase storage
+- **File Permissions**: Automatic `chmod 600` on sensitive configuration files
+- **Log Redaction**: Comprehensive PII and credential redaction in Worker logs
+  - Automatic detection of passwords, tokens, API keys, secrets
+  - Pattern-based redaction (Bearer tokens, Base64 encoded data, GitHub tokens, API keys)
+  - Safe logging wrappers (`safeLogError`, `safeLogRequest`)
+- **CI/CD Security Scanning**: Automated credential leak detection in pre-commit and CI workflows
+- **ESLint Enforcement**: `no-console` rule prevents accidental credential logging
+
 ### Zero-Knowledge Encryption
 - Client-side encryption using Web Crypto API (AES-GCM)
 - PBKDF2 key derivation (100,000 iterations)
@@ -62,14 +72,16 @@ Environment-aware implementation:
 - Zero-knowledge encryption architecture
 - Rate limiting implementation
 - Container hardening (non-root user, read-only filesystem, dropped capabilities)
+- **Secure passphrase storage defaults (October 2025)**
+- **Comprehensive log redaction utility (October 2025)**
+- **Automated credential leak scanning (October 2025)**
+- **ESLint no-console enforcement (October 2025)**
 
 ### Planned Enhancements 🔄
 - Increase PBKDF2 iterations (100k → 300k) with backward compatibility
 - Enhanced passphrase strength recommendations (12+ characters)
 - Automated dependency scanning (Dependabot)
-- Secret scanning in CI/CD
-- Structured logging with PII redaction
-- Comprehensive security test suite
+- Comprehensive security test suite expansion
 
 ## Out of Scope
 - Vulnerabilities in unmodified upstream dependencies
@@ -86,16 +98,19 @@ Environment-aware implementation:
 - Verify the dashboard URL before entering credentials
 
 ### For Server Operators:
+- **IMPORTANT**: Always decline passphrase storage when prompted (default: OFF)
 - Keep dependencies updated
 - Rotate API keys and tokens regularly
 - Monitor rate limit logs for suspicious activity
 - Use invitation codes securely (don't share publicly)
+- Review Worker logs for redacted credentials (indicates potential security issues)
 
 ## Acknowledgments
 Security improvements informed by:
 - OWASP Secure Headers Project
 - Cloudflare Workers Security Best Practices
 - Web Crypto API specifications
+- OWASP Logging Cheat Sheet
 
 ---
 

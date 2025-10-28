@@ -2,6 +2,7 @@ import { OpenAPIRoute, Query } from "chanfana";
 import { Context } from "hono";
 import { z } from "zod";
 
+import { safeLogError } from "../utils/redact";
 export class CreateUser extends OpenAPIRoute {
   schema = {
     tags: ["User Management"],
@@ -93,7 +94,7 @@ export class CreateUser extends OpenAPIRoute {
       });
 
     } catch (error) {
-      console.error("Error creating user:", error);
+      safeLogError(error, { context: "Error creating user:" });
       return c.json({ error: "Internal server error" }, 500);
     }
   }
