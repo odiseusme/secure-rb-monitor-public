@@ -28,7 +28,12 @@ const app = new Hono<{ Bindings: Env }>();
 app.use("*", async (c, next) => {
   await next();
   if (c.res) {
-    c.res = addSecurityHeaders(c.res, { environment: "development" });
+    // Auto-detect environment based on URL
+    const url = c.req.url;
+    const env = (url.includes('localhost') || url.includes('127.0.0.1'))
+      ? 'development'
+      : 'production';
+    c.res = addSecurityHeaders(c.res, { environment: env });
   }
 });
 
@@ -88,7 +93,10 @@ app.get("/d/:publicId", ServeDashboard);
 
 // Serve CSS
 app.get("/style.css", (c) =>
-  c.text(STYLE_CSS, 200, { "Content-Type": "text/css; charset=utf-8" })
+  c.text(STYLE_CSS, 200, { 
+    "Content-Type": "text/css; charset=utf-8",
+    "Cache-Control": "public, max-age=86400, immutable"
+  })
 );
 
 // Serve favicon.ico
@@ -107,20 +115,25 @@ app.get("/favicon.ico", (c) => {
 // Serve 180px PNG icon
 app.get("/icons/owlHeadA_180.png", (c) =>
   c.body(Uint8Array.from(atob(OWL_ICON_180_BASE64), c => c.charCodeAt(0)), 200, {
-    "Content-Type": "image/png"
+    "Content-Type": "image/png",
+    "Cache-Control": "public, max-age=31536000, immutable"
   })
 );
 
 // Serve 32px PNG icon
 app.get("/icons/owlHeadA_32.png", (c) =>
   c.body(Uint8Array.from(atob(OWL_ICON_32_BASE64), c => c.charCodeAt(0)), 200, {
-    "Content-Type": "image/png"
+    "Content-Type": "image/png",
+    "Cache-Control": "public, max-age=31536000, immutable"
   })
 );
 
 // Serve web manifest
 app.get("/site.webmanifest", (c) =>
-  c.text(MANIFEST_JSON, 200, { "Content-Type": "application/manifest+json; charset=utf-8" })
+  c.text(MANIFEST_JSON, 200, { 
+    "Content-Type": "application/manifest+json; charset=utf-8",
+    "Cache-Control": "public, max-age=86400"
+  })
 );
 
 // Export the app as the Worker
