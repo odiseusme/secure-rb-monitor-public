@@ -10,7 +10,7 @@
   },
   "rules": {
     "no-console": ["error", {
-      "allow": []
+      "allow": ["error", "warn"]
     }]
   }
 }
