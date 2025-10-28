@@ -19,9 +19,18 @@ import {
   OWL_ICON_180_BASE64,
   MANIFEST_JSON
 } from "./assets";
+import { addSecurityHeaders, secureResponse } from "./security";
 
 // Create a plain Hono app (no OpenAPI/chanfana)
 const app = new Hono<{ Bindings: Env }>();
+
+// Add security headers to all responses
+app.use("*", async (c, next) => {
+  await next();
+  if (c.res) {
+    c.res = addSecurityHeaders(c.res, { environment: "development" });
+  }
+});
 
 // Health check
 app.get("/health", (c) =>
