@@ -937,7 +937,7 @@ Based on comprehensive script review (October 2024), several critical issues nee
 
 After comprehensive review, many security features are **already implemented and documented**. This section focuses only on genuine gaps and incremental improvements.
 
-### Already Implemented ✅ (Verified Oct 26, 2025):
+### Already Implemented ✅ (Last Updated: Oct 30, 2025):
 
 - **✅ Rate Limiting:** Comprehensive implementation with 30 reads/hour per user, KV-based tracking
 - **✅ PBKDF2 Iterations:** Correctly set to 100,000 iterations as documented
@@ -945,6 +945,7 @@ After comprehensive review, many security features are **already implemented and
 - **✅ Passphrase Validation:** 8-character minimum enforced with confirmation
 - **✅ HTTPS Enforcement:** Automatically enforced in production
 - **✅ Network Isolation:** Automatic watcher network discovery and isolation
+- **✅ Network Egress Security:** Application-level hostname allowlisting prevents unauthorized outbound connections (lib/egress-validator.js, lib/safe-fetch.js)
 
 ### Genuine Gaps Requiring Implementation ❌ (Verified Missing):
 

@@ -11,6 +11,8 @@ const crypto = require('crypto');
 
 // Crypto helper functions (AES-CBC/GCM via WebCrypto)
 const { encryptGCM, encryptCBC, b64encode } = require('./cryptoHelpers');
+const { safeFetch } = require('./lib/safe-fetch');
+
 
 // ---- Timer state helpers ----
 const STATE_PATH = path.join(process.cwd(), '.cf-sync-state.json');
@@ -50,37 +52,8 @@ if (!state.lastDataChangeTime) {
   state.lastDataChangeTime = isoNow();
 }
 
-// Keep a slot for your last uploaded hash if you want to use it later
-if (!Object.prototype.hasOwnProperty.call(state, 'lastUploadedHash')) {
-  state.lastUploadedHash = null;
-}
-
-saveState(state);
-
-
-// KDF/passphrase inputs (env-configurable)
-const PASS_PHRASE = process.env.DASH_PASSPHRASE || 'TestPassphrase123!';           // TODO: set real passphrase via env
-const SALT_B64    = process.env.DASH_SALT_B64   || '1p7udJGXwrfk5IDzQUqSNw==';     // Will be overridden by config.salt
-const KDF_ITERS   = Number(process.env.DASH_KDF_ITERS || 100000);
-
-// Worker endpoint & auth (env-configurable)
 const BASE_URL    = process.env.BASE_URL || 'http://localhost:38472';
 const WRITE_TOKEN = process.env.WRITE_TOKEN || '';
-
-// Safe fetch fallback
-let fetch;
-try {
-  fetch = globalThis.fetch;
-  if (!fetch) throw new Error('No built-in fetch');
-} catch {
-  try {
-    fetch = require('node-fetch');
-  } catch (err) {
-    console.error('ERROR: No fetch implementation available');
-    console.error('Install node-fetch: npm install node-fetch');
-    process.exit(1);
-  }
-}
 
 const CONFIG_FILE = path.join(__dirname, '.cloudflare-config.json');
 const STATUS_FILE = path.join(__dirname, 'public', 'status.json');
@@ -235,7 +208,7 @@ const { payload, thisHash } = await buildEncryptedPayloadGCM(
   }
 );
 
-    const response = await fetch(`${workerUrl}/api/update`, {
+    const response = await safeFetch(`${workerUrl}/api/update`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

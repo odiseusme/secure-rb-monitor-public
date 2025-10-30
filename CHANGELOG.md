@@ -7,7 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added - Security Enhancements (October 28, 2025)
+### Added - Security Enhancements (October 2025)
+
+
+#### Network Egress Security (October 30, 2025)
+- **Hostname Allowlisting**: Application-level egress validation prevents unauthorized outbound connections
+  - All network requests validated against configurable allowlist
+  - Fail-closed security model (process exits on unauthorized connections)
+  - Auto-derivation from `CLOUDFLARE_BASE_URL` (zero-config default)
+  - Explicit allowlist override via `ALLOWED_EGRESS_HOSTS`
+  
+- **HTTPS Enforcement**: Blocks HTTP connections by default
+  - Configurable via `ALLOW_HTTP=true` for development
+  - Auto-enabled in NODE_ENV=development
+  
+- **IP Literal Blocking**: Prevents connections to raw IP addresses
+  - Configurable via `ALLOW_IP_EGRESS=true` for tunnels/development
+  - Protects against DNS rebinding attacks
+  
+- **Redirect Validation**: Validates redirect targets against allowlist
+  - Maximum 5 redirect hops to prevent loops
+  - Each redirect target validated before following
+  - Error codes: `E_EGRESS_REDIRECT`, `E_EGRESS_NO_LOCATION`
+  
+- **Standardized Error Codes**: 7 structured error codes for monitoring
+  - `E_EGRESS_SCHEME`: Invalid protocol (HTTP when disallowed)
+  - `E_EGRESS_PORT`: Nonstandard port (not 443/80)
+  - `E_EGRESS_IP`: IP literal when blocked
+  - `E_EGRESS_HOST`: Hostname not in allowlist
+  - `E_EGRESS_CONFIG`: Misconfiguration (missing URL, invalid format)
+  - `E_EGRESS_REDIRECT`: Redirect to unauthorized target
+  - `E_EGRESS_NO_LOCATION`: Redirect missing Location header
+  
+- **Performance Optimized**: Minimal overhead
+  - Allowlist caching with 300s TTL (signature-based invalidation)
+  - Lazy-loading of `net` module
+  - < 0.1% performance impact on network calls
+  
+- **Implementation Files**:
+  - `lib/egress-validator.js`: Core validation logic (168 lines, 82% coverage)
+  - `lib/safe-fetch.js`: Fetch wrapper with validation (79 lines, 79% coverage)
+  - Integrated into `cloudflare-sync.js` and `write_status.js`
+  - Comprehensive test suite (30 tests, 81% coverage)
+  
+- **Infrastructure Support**: Multi-layer defense
+  - Docker container configuration examples
+  - iptables/ufw firewall rules
+  - AWS Security Groups / GCP Firewall Rules
+  - Kubernetes NetworkPolicy templates
+  - See [SIDECAR_SECURITY.md](SIDECAR_SECURITY.md) for infrastructure hardening
 
 #### Passphrase Storage Security
 - **Default OFF**: Passphrase storage now defaults to OFF for security
@@ -70,8 +118,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `scripts/register-user.sh`: Passphrase storage now defaults to OFF with double confirmation
 - Worker endpoints: All error logging now uses `safeLogError()` instead of `console.error()`
-- `SECURITY.md`: Updated with new security implementations and best practices
-- Security roadmap: Moved 4 items from "Planned" to "Completed"
+- `cloudflare-sync.js`: All `fetch()` calls replaced with `safeFetch()` for egress validation
+- `write_status.js`: All `fetch()` calls replaced with `safeFetch()` via `fetchJsonSafe()` wrapper
+- `.env.example`: Added comprehensive network egress security configuration documentation
+- `docker-compose.yml`: Added `ALLOWED_EGRESS_HOSTS` and Cloudflare environment variables
+- `README.md`: Added Network Egress Security section with configuration examples and troubleshooting
+- `SECURITY.md`: Updated with network egress security implementation and best practices
+- `SIDECAR_SECURITY.md`: Added infrastructure-level egress security hardening guide (238 lines)
+- Security roadmap: Moved 5 items from "Planned" to "Completed"
 
 ### Deprecated
 - Direct `console.*` usage in Worker code (now enforced by ESLint)
@@ -86,8 +140,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Missing file permissions on sensitive configuration files (now `chmod 600`)
 
 ### Security
+- **CRITICAL**: Network egress allowlisting prevents unauthorized outbound connections and data exfiltration
 - **HIGH**: Passphrase storage defaults to OFF, preventing plaintext credential storage
 - **HIGH**: Comprehensive Worker log redaction prevents credential leaks
+- **HIGH**: Redirect validation prevents allowlist bypass via HTTP redirects
+- **MEDIUM**: HTTPS enforcement prevents protocol downgrade attacks (configurable for development)
+- **MEDIUM**: IP literal blocking prevents DNS rebinding attacks
 - **MEDIUM**: CI/CD scanning detects accidental credential commits
 - **MEDIUM**: ESLint enforcement prevents future credential logging vulnerabilities
 

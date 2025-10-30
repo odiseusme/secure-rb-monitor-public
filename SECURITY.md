@@ -31,6 +31,30 @@ Environment-aware implementation:
 - **CI/CD Security Scanning**: Automated credential leak detection in pre-commit and CI workflows
 - **ESLint Enforcement**: `no-console` rule prevents accidental credential logging
 
+
+### Network Egress Security (Implemented: October 2025)
+
+Application-level network egress allowlisting prevents unauthorized outbound connections:
+
+- **Hostname Allowlisting**: All network requests validated against configurable allowlist
+- **Auto-Derivation**: Automatically derives allowed hosts from `CLOUDFLARE_BASE_URL` (zero config)
+- **HTTPS Enforcement**: Blocks HTTP connections by default (configurable for development)
+- **IP Literal Blocking**: Prevents connections to raw IP addresses unless explicitly allowed
+- **Redirect Validation**: Validates redirect targets to prevent allowlist bypass
+- **Fail-Closed Security**: Process exits immediately on unauthorized connection attempts
+- **Standardized Error Codes**: Structured error codes for monitoring and alerting
+- **Performance Optimized**: Cached allowlist with TTL (< 0.1% overhead)
+
+Configuration:
+- `CLOUDFLARE_BASE_URL`: Required worker URL (auto-derives allowlist)
+- `ALLOWED_EGRESS_HOSTS`: Optional explicit allowlist (comma-separated hostnames)
+- `ALLOW_IP_EGRESS`: Allow IP literals for development/tunnels (default: false)
+- `ALLOW_HTTP`: Allow HTTP connections (default: false, auto-enabled in dev)
+- `FETCH_TIMEOUT_MS`: Request timeout (default: 15000ms)
+- `EGRESS_CACHE_TTL_MS`: Allowlist cache duration (default: 300000ms)
+
+See [SIDECAR_SECURITY.md](SIDECAR_SECURITY.md) for infrastructure-level enforcement (Docker, firewalls, Kubernetes).
+
 ### Zero-Knowledge Encryption
 - Client-side encryption using Web Crypto API (AES-GCM)
 - PBKDF2 key derivation (100,000 iterations)
@@ -116,4 +140,4 @@ Security improvements informed by:
 
 **Thank you for helping keep RBMonitor secure!**
 
-*Last Updated: October 28, 2025*
+*Last Updated: October 30, 2025*

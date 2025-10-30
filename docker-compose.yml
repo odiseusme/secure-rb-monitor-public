@@ -21,6 +21,15 @@ services:
       - UPDATE_INTERVAL=${UPDATE_INTERVAL:-30000}
       - TZ=${TZ:-UTC}
       - NODE_ENV=production
+      
+      # Network Egress Security (Sidecar Safety)
+      # Only connections to these hosts will be permitted
+      # Default: Auto-derived from CLOUDFLARE_BASE_URL
+      # Override: ALLOWED_EGRESS_HOSTS=worker1.dev,worker2.dev
+      - ALLOWED_EGRESS_HOSTS=${ALLOWED_EGRESS_HOSTS:-}
+      - CLOUDFLARE_BASE_URL=${CLOUDFLARE_BASE_URL}
+      - CLOUDFLARE_PUBLIC_ID=${CLOUDFLARE_PUBLIC_ID}
+      - CLOUDFLARE_WRITE_TOKEN=${CLOUDFLARE_WRITE_TOKEN}
 
     ports:
       - "${HOST_IP:-127.0.0.1}:${HOST_PORT:-8080}:8080"

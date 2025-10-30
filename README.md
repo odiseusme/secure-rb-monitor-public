@@ -541,6 +541,82 @@ Baseline GitHub Actions workflow included. Customize for your needs.
 
 ---
 
+
+### 🔒 Network Egress Security
+
+**Application-level network egress allowlisting prevents unauthorized outbound connections.**
+
+#### How It Works
+- All network requests validated against hostname allowlist
+- HTTPS enforced by default (HTTP allowed in development)
+- Redirect validation prevents bypass attempts
+- Fail-closed: Process exits on security violations
+
+#### Configuration
+
+**Minimal (Auto-Derive):**
+```bash
+# .env
+CLOUDFLARE_BASE_URL=https://my-worker.workers.dev
+# Automatically allows only: my-worker.workers.dev
+```
+
+**Multiple Workers:**
+```bash
+# .env
+CLOUDFLARE_BASE_URL=https://primary.workers.dev
+ALLOWED_EGRESS_HOSTS=primary.workers.dev,backup.workers.dev
+```
+
+**Development (Local):**
+```bash
+# .env.development
+NODE_ENV=development
+CLOUDFLARE_BASE_URL=http://localhost:8787
+ALLOWED_EGRESS_HOSTS=localhost
+```
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLOUDFLARE_BASE_URL` | Required | Your Cloudflare Worker URL |
+| `ALLOWED_EGRESS_HOSTS` | Auto-derived | Comma-separated hostnames (no `https://`) |
+| `ALLOW_IP_EGRESS` | `false` | Allow IP literals (use for local dev/tunnels) |
+| `ALLOW_HTTP` | `false` | Allow HTTP (auto-enabled in dev) |
+| `FETCH_TIMEOUT_MS` | `15000` | Request timeout in milliseconds |
+| `EGRESS_CACHE_TTL_MS` | `300000` | Cache TTL for allowlist (5 minutes) |
+
+#### Startup Logs
+
+```
+═══════════════════════════════════════════════════
+[EGRESS SECURITY] Network Egress Allowlist Active
+═══════════════════════════════════════════════════
+Allowed destinations (1):
+  ✓ my-worker.workers.dev
+HTTP allowed: no (production)
+All other network connections will be BLOCKED
+═══════════════════════════════════════════════════
+```
+
+#### Troubleshooting
+
+**Error: `[E_EGRESS_HOST] Unauthorized network egress to example.com`**
+- **Cause:** Target host not in allowlist
+- **Fix:** Add to `ALLOWED_EGRESS_HOSTS` or update `CLOUDFLARE_BASE_URL`
+
+**Error: `[E_EGRESS_CONFIG] Remove scheme from ALLOWED_EGRESS_HOSTS`**
+- **Cause:** `https://` included in allowlist entry
+- **Fix:** Use `worker.dev` not `https://worker.dev`
+
+**Error: `[E_EGRESS_IP] IP literal blocked`**
+- **Cause:** Connecting to IP address without permission
+- **Fix (dev only):** Set `ALLOW_IP_EGRESS=true`
+
+**For infrastructure-level enforcement**, see [SIDECAR_SECURITY.md](SIDECAR_SECURITY.md) for Docker networking, firewall rules, and Kubernetes NetworkPolicy examples.
+
+
 ## Troubleshooting
 
 ### Registration Issues
