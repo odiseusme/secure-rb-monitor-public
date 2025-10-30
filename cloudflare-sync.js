@@ -54,6 +54,8 @@ if (!state.lastDataChangeTime) {
 
 const BASE_URL    = process.env.BASE_URL || 'http://localhost:38472';
 const WRITE_TOKEN = process.env.WRITE_TOKEN || '';
+const PASS_PHRASE = process.env.DASH_PASSPHRASE || '';
+const KDF_ITERS   = 100000; // PBKDF2 iterations for key derivation
 
 const CONFIG_FILE = path.join(__dirname, '.cloudflare-config.json');
 const STATUS_FILE = path.join(__dirname, 'public', 'status.json');
