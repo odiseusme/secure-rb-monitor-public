@@ -937,7 +937,7 @@ Based on comprehensive script review (October 2024), several critical issues nee
 
 After comprehensive review, many security features are **already implemented and documented**. This section focuses only on genuine gaps and incremental improvements.
 
-### Already Implemented ✅ (Verified Oct 26, 2025):
+### Already Implemented ✅ (Last Updated: Oct 30, 2025):
 
 - **✅ Rate Limiting:** Comprehensive implementation with 30 reads/hour per user, KV-based tracking
 - **✅ PBKDF2 Iterations:** Correctly set to 100,000 iterations as documented
@@ -945,23 +945,16 @@ After comprehensive review, many security features are **already implemented and
 - **✅ Passphrase Validation:** 8-character minimum enforced with confirmation
 - **✅ HTTPS Enforcement:** Automatically enforced in production
 - **✅ Network Isolation:** Automatic watcher network discovery and isolation
+- **✅ Network Egress Security:** Hardcoded allowlist (worker + api.ergoplatform.com) prevents unauthorized connections (lib/egress-validator.js, lib/safe-fetch.js)
 
 ### Genuine Gaps Requiring Implementation ❌ (Verified Missing):
 
-- **❌ Security Headers:** No CSP, X-Frame-Options, or other security headers implemented
+- **✅ Security Headers:** Comprehensive CSP (nonce-based), HSTS, X-Frame-Options, CORS policies (worker/mute-mouse-2cd2/src/security.ts, src/csp.ts)
 - **❌ Container User Configuration:** Dockerfile has conflicting user statements (monitor vs node)
 - **❌ Passphrase Storage Policy:** Currently prompts to save in .env by default
 
 ## Verified Implementation Gaps (Prioritized by Impact):
 
-### Group 1: Critical Security Headers (MISSING ENTIRELY) 🔴
-
-**🔐 Security Headers Implementation** 
-- **Current State:** NO security headers implemented in Cloudflare Worker
-- **Required:** CSP, X-Frame-Options, HSTS, X-Content-Type-Options, Referrer-Policy
-- **Files:** `worker/mute-mouse-2cd2/src/index.ts`
-- **Impact:** High - prevents XSS, clickjacking, protocol downgrade attacks
-- **Time:** 3-5 hours (includes testing across all routes)
 
 ### Group 2: Container Configuration Cleanup 🟡
 

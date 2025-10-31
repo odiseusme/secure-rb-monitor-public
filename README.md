@@ -541,6 +541,90 @@ Baseline GitHub Actions workflow included. Customize for your needs.
 
 ---
 
+
+### 🔒 Network Egress Security
+
+**Hardcoded network egress allowlist prevents unauthorized outbound connections - zero configuration required.**
+
+#### How It Works
+- **Hardcoded allowlist**: Only 2 destinations permitted (cannot be changed via environment variables)
+  1. Your Cloudflare Worker (auto-derived from `BASE_URL` or `CLOUDFLARE_BASE_URL`)
+  2. `api.ergoplatform.com` (required for wallet balance fetching)
+- **Fail-closed security**: Process exits if unauthorized connections are attempted
+- **HTTPS enforced** by default (HTTP allowed in development with `ALLOW_HTTP=true`)
+- **Redirect validation** prevents bypass attempts via 301/302 redirects
+
+#### Zero-Configuration Setup
+
+The allowlist is **automatically configured** during user registration:
+
+```bash
+# 1. Register user (sets BASE_URL in .env automatically)
+bash scripts/register-user.sh --invite YOUR_CODE --base-url https://your-worker.workers.dev
+
+# 2. Start monitoring - egress security active immediately
+docker compose up -d
+```
+
+No additional configuration needed! ✅
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BASE_URL` or `CLOUDFLARE_BASE_URL` | Required | Auto-set during registration - used to derive worker hostname |
+| `ALLOW_IP_EGRESS` | `false` | Allow IP literals (dev/tunnel support only) |
+| `ALLOW_HTTP` | `false` | Allow HTTP (auto-enabled in dev) |
+| `FETCH_TIMEOUT_MS` | `15000` | Request timeout in milliseconds |
+
+**Note:** `ALLOWED_EGRESS_HOSTS` is **ignored** for security - the allowlist is hardcoded in `lib/egress-validator.js`.
+
+#### Startup Logs
+
+```
+════════════════════════════════════════════
+[EGRESS SECURITY] Network Egress Allowlist Active
+════════════════════════════════════════════
+Allowed destinations (2):
+  ✓ your-worker.workers.dev
+  ✓ api.ergoplatform.com
+HTTP allowed: no (production)
+All other network connections will be BLOCKED
+════════════════════════════════════════════
+```
+
+#### Adding Additional Destinations (Advanced)
+
+**By design, users cannot add destinations via environment variables.** This prevents accidental or malicious credential leaks.
+
+To allow additional domains, modify `lib/egress-validator.js`:
+
+```javascript
+// Line 63-66: Add your domain to this array
+const entries = [
+  workerHost,
+  'api.ergoplatform.com',
+  'your-new-domain.com'  // Add here
+];
+```
+
+#### Troubleshooting
+
+**Error: `[E_EGRESS_HOST] Unauthorized network egress to example.com`**
+- **Cause:** Target host not in hardcoded allowlist
+- **Fix:** Modify `lib/egress-validator.js` to add the domain (code change required)
+
+**Error: `[E_EGRESS_CONFIG] CLOUDFLARE_BASE_URL (or BASE_URL) is required`**
+- **Cause:** Missing worker URL configuration
+- **Fix:** Set `BASE_URL` in `.env` (automatically done during registration)
+
+**Error: `[E_EGRESS_IP] IP literal blocked`**
+- **Cause:** Connecting to IP address without permission
+- **Fix (dev only):** Set `ALLOW_IP_EGRESS=true` in `.env`
+
+**For infrastructure-level enforcement**, see [SIDECAR_SECURITY.md](SIDECAR_SECURITY.md) for Docker networking, firewall rules, and Kubernetes NetworkPolicy examples.
+
+
 ## Troubleshooting
 
 ### Registration Issues

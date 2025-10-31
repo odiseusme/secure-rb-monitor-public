@@ -1,15 +1,11 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
 
-# Load credentials from .env
-if [ ! -f .env ]; then
-  echo "Error: .env file not found"
-  exit 1
+# Load environment from .env
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
 fi
-
-set -a
-source .env
-set +a
 
 # Check required variables
 [ -z "${BASE_URL:-}" ] && { echo "Error: BASE_URL not set in .env"; exit 1; }

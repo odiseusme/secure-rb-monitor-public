@@ -38,17 +38,9 @@ app.use("*", async (c, next) => {
 });
 
 // Health check
-app.get("/health", (c) =>
-  c.json({ status: "ok", timestamp: new Date().toISOString() })
-);
+app.get("/health", (c) => c.json({ status: "ok", timestamp: new Date().toISOString() }));
 
-// === API routes (call each endpoint class's handle() method) ===
-
-// Create a user (legacy helper; you can keep or remove if not needed)
-app.post("/api/create-user", async (c) => {
-  const endpoint = new CreateUser();
-  return endpoint.handle(c);
-});
+/* DEV ONLY: show what env the Worker sees (remove in prod) */
 
 // Update encrypted data blob (writer)
 app.post("/api/update", async (c) => {
@@ -88,6 +80,8 @@ app.get("/api/admin/stats", async (c) => {
 
 // Serve the dashboard HTML (ServeDashboard is a function, not a class)
 app.get("/d/:publicId", ServeDashboard);
+
+
 
 // ===== Static Asset Routes =====
 

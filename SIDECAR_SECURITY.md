@@ -284,3 +284,241 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting process.
 ---
 
 **Last Updated: October 28, 2025**
+
+---
+
+## Network Egress Security (Infrastructure Layer)
+
+This section covers **defense-in-depth** network security beyond the built-in application-level controls.
+
+### Security Layers
+
+1. **Application:** `safeFetch` validation (built-in, see [SECURITY.md](SECURITY.md))
+2. **Container:** Docker network restrictions
+3. **Host:** Firewall rules (iptables/ufw)
+4. **Cloud:** Security groups/Network Policies
+
+---
+
+### Layer 2: Docker Network Security
+
+#### Docker Compose Configuration
+
+```yaml
+services:
+  rbmonitor-producer:
+    # Security hardening
+    user: "1000:1000"  # Run as non-root
+    read_only: true    # Read-only root filesystem
+    cap_drop:
+      - ALL            # Drop all capabilities
+    security_opt:
+      - no-new-privileges:true
+    
+    # Required writable directories
+    tmpfs:
+      - /tmp
+    
+    environment:
+      - CLOUDFLARE_BASE_URL=https://worker.workers.dev
+      - ALLOWED_EGRESS_HOSTS=${ALLOWED_EGRESS_HOSTS:-}
+```
+
+#### Docker Run Equivalent
+
+```bash
+docker run -d \
+  --name rbmonitor-producer \
+  --user 1000:1000 \
+  --read-only \
+  --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  --tmpfs /tmp \
+  -e CLOUDFLARE_BASE_URL=https://worker.workers.dev \
+  rbmonitor:latest
+```
+
+---
+
+### Layer 3: Host Firewall Rules
+
+**Note:** These examples are optional and add defense-in-depth. The application layer already enforces egress control.
+
+#### Option A: iptables (Most Linux)
+
+```bash
+#!/bin/bash
+# Allow only Cloudflare Worker egress
+
+WORKER_HOST="worker.workers.dev"
+WORKER_IP=$(dig +short "$WORKER_HOST" | head -n1)
+
+# Create chain
+iptables -N rbmonitor-egress || true
+iptables -F rbmonitor-egress
+
+# Allow established connections
+iptables -A rbmonitor-egress -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+# Allow DNS
+iptables -A rbmonitor-egress -p udp --dport 53 -j ACCEPT
+
+# Allow HTTPS to Worker
+iptables -A rbmonitor-egress -d "$WORKER_IP" -p tcp --dport 443 -j ACCEPT
+
+# Block all other egress
+iptables -A rbmonitor-egress -j LOG --log-prefix "[EGRESS-BLOCKED] "
+iptables -A rbmonitor-egress -j DROP
+
+# Apply to Docker
+iptables -I DOCKER-USER -j rbmonitor-egress
+
+# Persist
+netfilter-persistent save
+```
+
+#### Option B: ufw (Ubuntu/Debian)
+
+```bash
+#!/bin/bash
+# UFW-based egress control
+
+WORKER_HOST="worker.workers.dev"
+WORKER_IP=$(dig +short "$WORKER_HOST" | head -n1)
+
+# Allow DNS
+ufw allow out 53
+
+# Allow HTTPS to Worker
+ufw allow out to "$WORKER_IP" port 443 proto tcp
+
+# Default deny outgoing
+ufw default deny outgoing
+
+# Enable
+ufw enable
+```
+
+---
+
+### Layer 4: Cloud Security Groups
+
+#### AWS Security Group (Terraform)
+
+```hcl
+resource "aws_security_group" "rbmonitor" {
+  name        = "rbmonitor-egress-only"
+  description = "Allow egress only to Cloudflare Workers"
+  
+  egress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = var.cloudflare_worker_ips
+  }
+}
+```
+
+#### GCP Firewall Rule
+
+```bash
+gcloud compute firewall-rules create rbmonitor-egress-only \
+  --direction=EGRESS \
+  --action=ALLOW \
+  --rules=tcp:443 \
+  --destination-ranges=<cloudflare-ips>
+```
+
+#### Kubernetes NetworkPolicy
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rbmonitor-egress-only
+spec:
+  podSelector:
+    matchLabels:
+      app: rbmonitor
+  policyTypes:
+    - Egress
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow HTTPS to Cloudflare Workers
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0  # Restrict to Cloudflare IP ranges in production
+      ports:
+        - protocol: TCP
+          port: 443
+```
+
+---
+
+### Verification
+
+#### Test Application Security
+```bash
+# Should succeed
+docker exec rbmonitor-producer node -e "
+const { safeFetch } = require('./lib/safe-fetch');
+safeFetch('$CLOUDFLARE_BASE_URL').then(() => console.log('OK'));
+"
+
+# Should fail with E_EGRESS_HOST
+docker exec rbmonitor-producer node -e "
+const { safeFetch } = require('./lib/safe-fetch');
+safeFetch('https://evil.com').catch(e => console.log('Blocked:', e.code));
+"
+```
+
+#### Test Network Security
+```bash
+# Should timeout (if firewall configured)
+docker exec rbmonitor-producer curl https://google.com --max-time 5
+```
+
+---
+
+### Troubleshooting
+
+**Issue: Legitimate connections blocked**
+1. Check application logs for `E_EGRESS_HOST` error
+2. Verify `ALLOWED_EGRESS_HOSTS` includes target
+3. Check firewall allows Worker IP
+4. Verify security group rules
+
+**Issue: Firewall rules not persisting**
+- iptables: Install `iptables-persistent`
+- ufw: Enable service
+- Cloud: Use Infrastructure-as-Code
+
+---
+
+### Maintenance
+
+**When Adding New Workers:**
+1. Update `ALLOWED_EGRESS_HOSTS` in `.env`
+2. Update firewall rules (if configured)
+3. Update cloud security groups (if applicable)
+4. Test connectivity
+5. Monitor logs for 24 hours
+
+**Regular Reviews:**
+- Weekly: Check logs for `E_EGRESS_*` errors
+- Monthly: Review allowlist for unused entries
+- Quarterly: Audit all security layers
+
+---
+
+**See Also:**
+- [SECURITY.md](SECURITY.md) - Application security details
+- [README.md](README.md) - Network Egress Security configuration
+- Docker Security: https://docs.docker.com/engine/security/

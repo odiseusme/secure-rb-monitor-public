@@ -5,21 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 
-// Safe fetch fallback (built-in or node-fetch)
-let fetch;
-try {
-  fetch = globalThis.fetch;
-  if (!fetch) throw new Error('No built-in fetch');
-  console.log('[NETWORK] Using built-in fetch');
-} catch {
-  try {
-    fetch = require('node-fetch');
-    console.log('[NETWORK] Using node-fetch module');
-  } catch (err) {
-    console.error('[ERROR] No fetch implementation available');
-    process.exit(1);
-  }
-}
+const { safeFetch } = require('./lib/safe-fetch');
 
 let CONFIG = {
   statusFile: path.join(__dirname, 'public', 'status.json'),
@@ -58,12 +44,12 @@ async function withRetry(fn, maxRetries = 1, baseDelay = 500) {
 }
 
 // Fetch JSON from URL with retry logic
-async function fetchJson(url, headers = {}, retries = 2) {
+async function fetchJsonSafe(url, headers = {}, retries = 2) {
   for (let i = 0; i <= retries; i++) {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), CONFIG.timeout);
-      const res = await fetch(url, {
+      const res = await safeFetch(url, {
         headers,
         signal: controller.signal
       });
@@ -82,7 +68,7 @@ async function fetchJson(url, headers = {}, retries = 2) {
 async function getAllBalances(address, rsnTokenId, eRsnTokenId) {
   try {
     const apiUrl = `${CONFIG.ergoExplorerApi}/api/v1/addresses/${address}/balance/confirmed`;
-    const balanceData = await fetchJson(apiUrl);
+    const balanceData = await fetchJsonSafe(apiUrl);
 
     const ergBalance = (balanceData.nanoErgs || 0) / 1e9;
 
@@ -164,7 +150,7 @@ async function collectWatcherStatus(watcher) {
   try {
     // Get watcher info from service_url (not from UI port)
     const info = await withRetry(async () => {
-      return await fetchJson(watcher.service_url);
+      return await fetchJsonSafe(watcher.service_url);
     }, 1, 500);
 
     if (!info || !info.health || !info.health.status) {
