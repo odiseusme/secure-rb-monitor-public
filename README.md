@@ -100,6 +100,20 @@ wrangler deploy
 
 **Step 2: Register with automatic credential setup**
 
+**Recommended: Interactive Mode (No flags needed!)**  
+Simply run the script for a guided, user-friendly experience:
+```bash
+./scripts/register-user.sh
+```
+
+The interactive menu will guide you through:
+- Entering your invitation code
+- Creating a strong passphrase (or auto-generating one)
+- Starting the monitoring service
+
+**Advanced: Automation Mode (For CI/CD only)**  
+If you need to automate registration in scripts or CI/CD pipelines:
+
 For production (remote Worker):
 ```bash
 BASE_URL="https://your-worker.workers.dev" ./scripts/register-user.sh --invite INVITE-YOUR-CODE

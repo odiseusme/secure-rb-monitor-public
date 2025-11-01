@@ -1,105 +1,1141 @@
 #!/usr/bin/env bash
-# register-user.sh — minimal user registration helper
+# register-user.sh — User registration with interactive menu and security upgrades
+# Version: 2.1.0
+# Date: 2025-11-01
 set -Eeuo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-# Colors
-if command -v tput >/dev/null 2>&1 && [ -t 1 ]; then
-  RED="$(tput setaf 1)"; GREEN="$(tput setaf 2)"; CYAN="$(tput setaf 6)"; YELLOW="$(tput setaf 3)"; NC="$(tput sgr0)"
-else
-  RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; CYAN=$'\033[0;36m'; YELLOW=$'\033[1;33m'; NC=$'\033[0m'
-fi
-die() { echo "${RED}✗${NC} $*" >&2; exit 1; }
+# ============================================================================
+# VERSION
+# ============================================================================
 
-# Config
-DEFAULT_BASE_URL="http://localhost:38472"
-BASE_URL="${BASE_URL:-$DEFAULT_BASE_URL}"
+VERSION="2.1.0"
+
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+
+# Load BASE_URL from .env if it exists
+if [ -f ".env" ]; then
+  # Source .env to get BASE_URL
+  set -a
+  source .env 2>/dev/null || true
+  set +a
+fi
+
+# Check if BASE_URL is set
+if [ -z "${BASE_URL:-}" ]; then
+  die "No BASE_URL found. Please copy .env.example to .env and ensure BASE_URL is set."
+fi
+
 CONFIG_FILE="${CONFIG_FILE:-.cloudflare-config.json}"
 INVITE_CODE="${INVITE_CODE:-}"
+MAX_MISMATCH_RETRIES=5
+PASSPHRASE=""
+PASSPHRASE_FILE=""
+FORCE_GENERATED=0
+NO_START=0
+GENERATE_QR=0
+EMBED_PASSPHRASE_QR=0
+QR_OUT_FILE=""
+QR_FRAGMENT_KEY="p"
+DRY_RUN=0
+FORCE=0
+QUIET=0
 
-# Parse args
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --invite) shift; INVITE_CODE="${1:-}"; [ -n "$INVITE_CODE" ] || die "--invite requires a code" ;;
-    --base-url) shift; BASE_URL="${1:-}"; [ -n "$BASE_URL" ] || die "--base-url requires a value" ;;
-    -h|--help)
-      cat <<USAGE
-Usage: $0 --invite CODE [--base-url URL]
-Example: $0 --invite INVITE-ABC-XYZ
-USAGE
-      exit 0 ;;
-    *) die "Unknown argument: $1" ;;
-  esac
-  shift
-done
+# Detection state (populated by check_existing_registration)
+HAS_ENV=false
+HAS_CONFIG=false
+DASHBOARD_URL=""
+PASSPHRASE_SAVED=false
+UPLOADER_RUNNING=false
+UPLOADER_PID=""
 
-# Check dependencies
-for cmd in curl jq node; do
-  command -v "$cmd" >/dev/null 2>&1 || die "Required: $cmd"
-done
+# ============================================================================
+# COLOR SETUP (with terminal detection per review)
+# ============================================================================
 
-# Health check
-HTTP_STATUS="$(curl -sS -m 5 -o /dev/null -w '%{http_code}' "$BASE_URL/health" 2>/dev/null || true)"
-[ "$HTTP_STATUS" = "200" ] || die "Worker not running at $BASE_URL"
+setup_colors() {
+  # Disable colors if NO_COLOR set or not a terminal
+  if [ -n "${NO_COLOR:-}" ] || [ ! -t 1 ]; then
+    RED=''; GREEN=''; YELLOW=''; BLUE=''; CYAN=''; BOLD=''; NC=''
+    return
+  fi
+  
+  # Check terminal capability
+  if command -v tput >/dev/null 2>&1 && [ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]; then
+    RED="$(tput setaf 1 2>/dev/null || echo '')"
+    GREEN="$(tput setaf 2 2>/dev/null || echo '')"
+    CYAN="$(tput setaf 6 2>/dev/null || echo '')"
+    YELLOW="$(tput setaf 3 2>/dev/null || echo '')"
+    BLUE="$(tput setaf 4 2>/dev/null || echo '')"
+    BOLD="$(tput bold 2>/dev/null || echo '')"
+    NC="$(tput sgr0 2>/dev/null || echo '')"
+  else
+    # Fallback to ANSI codes if tput fails
+    RED=$'\033[0;31m'
+    GREEN=$'\033[0;32m'
+    CYAN=$'\033[0;36m'
+    YELLOW=$'\033[1;33m'
+    BLUE=$'\033[0;34m'
+    BOLD=$'\033[1m'
+    NC=$'\033[0m'
+  fi
+}
 
-# Get invitation code
-if [ -z "$INVITE_CODE" ]; then
-  read -r -p "Invitation code: " INVITE_CODE
-  [ -n "$INVITE_CODE" ] || die "Invitation code required"
-fi
+# ============================================================================
+# TRAP HANDLERS (per review - missing item #1)
+# ============================================================================
 
-# Prompt for passphrase
-echo ""
-echo "${CYAN}Choose a passphrase for dashboard access${NC}"
-echo "This will be used to decrypt your monitoring data"
-read -r -s -p "Passphrase (min 8 chars): " PASSPHRASE
-echo ""
-[ ${#PASSPHRASE} -ge 8 ] || die "Passphrase must be at least 8 characters"
+cleanup_on_interrupt() {
+  echo "" >&2
+  warn "Registration cancelled by user"
+  rm -f ".env.tmp" ".cloudflare-config.json.tmp" 2>/dev/null || true
+  exit 130
+}
 
-read -r -s -p "Confirm passphrase: " PASSPHRASE_CONFIRM
-echo ""
-[ "$PASSPHRASE" = "$PASSPHRASE_CONFIRM" ] || die "Passphrases do not match"
+trap cleanup_on_interrupt INT TERM
 
-# Backup existing config
-if [ -f "$CONFIG_FILE" ]; then
-  mv "$CONFIG_FILE" "${CONFIG_FILE}.bak.$(date -u +%Y%m%dT%H%M%SZ)" 2>/dev/null || true
-fi
+# ============================================================================
+# LOGGING (per review - recommendation #3)
+# ============================================================================
 
-# Register
-[ -f "setup-cloudflare.js" ] || die "setup-cloudflare.js not found"
+LOG_FILE=".register-user.log"
 
-# Create a temporary input file
-TEMP_INPUT=$(mktemp)
-echo "$INVITE_CODE" > "$TEMP_INPUT"
+log_action() {
+  if [ "${QUIET}" -eq 0 ]; then
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    echo "[$timestamp] $*" >> "$LOG_FILE" 2>/dev/null || true
+  fi
+}
 
-# Run with input redirection and suppress output
-BASE_URL="$BASE_URL" node setup-cloudflare.js < "$TEMP_INPUT" > /dev/null 2>&1
-EXIT_CODE=$?
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
 
-# Cleanup
-rm -f "$TEMP_INPUT"
-[ $EXIT_CODE -eq 0 ] || die "Registration failed"
-[ -f "$CONFIG_FILE" ] || die "Registration failed - config not created"
+die() {
+  echo "${RED}✗${NC} $*" >&2
+  log_action "ERROR: $*"
+  exit 1
+}
 
-# Extract credentials
-PUBLIC_ID="$(jq -er '.publicId' "$CONFIG_FILE")"
-WRITE_TOKEN="$(jq -er '.writeToken' "$CONFIG_FILE")"
-SALT="$(jq -er '.salt' "$CONFIG_FILE")"
-DASHBOARD_URL="$(jq -er '.dashboardUrl' "$CONFIG_FILE")"
+info() {
+  if [ "${QUIET}" -eq 0 ]; then
+    echo "${CYAN}ℹ${NC} $*"
+  fi
+}
 
-# Update .env file with credentials
-if [ -f ".env" ]; then
-  # Remove existing Cloudflare lines if present
-  sed -i '/^# Cloudflare Worker Configuration/,/^DASH_SALT_B64=/d' .env
-  sed -i '/^DASH_PASSPHRASE=/d' .env
-fi
+success() {
+  if [ "${QUIET}" -eq 0 ]; then
+    echo "${GREEN}✓${NC} $*"
+  fi
+}
 
-# Append basic configuration (without passphrase)
-cat >> .env <<ENV_EOF
+warn() {
+  echo "${YELLOW}⚠${NC} $*" >&2
+}
+
+strip_ansi() {
+  sed 's/\x1b\[[0-9;]*m//g'
+}
+
+# TTY check for interactive mode (per review - challenge #2)
+is_interactive() {
+  [ -t 0 ] && [ -t 1 ]
+}
+
+# ============================================================================
+# EXISTING REGISTRATION DETECTION
+# ============================================================================
+
+check_existing_registration() {
+  HAS_ENV=false
+  HAS_CONFIG=false
+  DASHBOARD_URL=""
+  PASSPHRASE_SAVED=false
+  UPLOADER_RUNNING=false
+  UPLOADER_PID=""
+  
+  # Check .env exists and has required fields
+  if [ -f ".env" ]; then
+    if grep -q "BASE_URL=" .env 2>/dev/null && grep -q "WRITE_TOKEN=" .env 2>/dev/null; then
+      HAS_ENV=true
+      
+      # Check if passphrase is saved
+      if grep -q "DASH_PASSPHRASE=" .env 2>/dev/null; then
+        PASSPHRASE_SAVED=true
+      fi
+    fi
+  fi
+  
+  # Check config exists and extract dashboard URL
+  if [ -f ".cloudflare-config.json" ]; then
+    if command -v jq >/dev/null 2>&1; then
+      DASHBOARD_URL=$(jq -r '.dashboardUrl // empty' .cloudflare-config.json 2>/dev/null || echo "")
+      [ -n "$DASHBOARD_URL" ] && HAS_CONFIG=true
+    fi
+  fi
+  
+  # Check if uploader is running (fixed race condition per review - bug #1)
+  if [ -f ".run/uploader.pid" ]; then
+    local pid=$(cat .run/uploader.pid 2>/dev/null || echo "")
+    if [ -n "$pid" ] && ps -p "$pid" >/dev/null 2>&1; then
+      UPLOADER_RUNNING=true
+      UPLOADER_PID="$pid"
+    fi
+  fi
+  
+  # Fallback: check by process name (atomic check per review)
+  if [ "$UPLOADER_RUNNING" = false ]; then
+    UPLOADER_PID=$(pgrep -f "cloudflare-sync.js" 2>/dev/null | head -1 || echo "")
+    if [ -n "$UPLOADER_PID" ] && ps -p "$UPLOADER_PID" >/dev/null 2>&1; then
+      UPLOADER_RUNNING=true
+    else
+      UPLOADER_PID=""
+    fi
+  fi
+  
+  # Return detection result
+  if [ "$HAS_ENV" = true ] || [ "$HAS_CONFIG" = true ]; then
+    log_action "Detected existing registration"
+    return 0  # Registration exists
+  else
+    return 1  # No registration
+  fi
+}
+
+show_existing_registration() {
+  echo ""
+  echo "═══════════════════════════════════════════════════════════"
+  echo "${YELLOW}⚠️  Existing Registration Detected${NC}"
+  echo "═══════════════════════════════════════════════════════════"
+  echo ""
+  
+  # Show dashboard URL if available
+  if [ -n "$DASHBOARD_URL" ]; then
+    echo "${BOLD}Dashboard URL:${NC}"
+    echo "  ${CYAN}$DASHBOARD_URL${NC}"
+    echo ""
+  fi
+  
+  # Show passphrase status
+  echo "${BOLD}Passphrase saved in .env:${NC} $([ "$PASSPHRASE_SAVED" = true ] && echo "${GREEN}YES${NC}" || echo "${YELLOW}NO${NC}")"
+  
+  # Show uploader status
+  if [ "$UPLOADER_RUNNING" = true ]; then
+    echo "${BOLD}Uploader status:${NC} ${GREEN}Running${NC} (PID: $UPLOADER_PID)"
+  else
+    echo "${BOLD}Uploader status:${NC} ${YELLOW}Not running${NC}"
+  fi
+  
+  echo ""
+  echo "═══════════════════════════════════════════════════════════"
+  echo ""
+}
+
+# ============================================================================
+# PROCESS MANAGEMENT
+# ============================================================================
+
+stop_uploader() {
+  local stopped=false
+  
+  if [ "$UPLOADER_RUNNING" = false ]; then
+    return 0
+  fi
+  
+  info "Stopping uploader (PID: $UPLOADER_PID)..."
+  log_action "Stopping uploader PID: $UPLOADER_PID"
+  
+  # Try graceful kill
+  if kill "$UPLOADER_PID" 2>/dev/null; then
+    # Wait up to 5 seconds for graceful shutdown
+    local count=0
+    while ps -p "$UPLOADER_PID" >/dev/null 2>&1 && [ $count -lt 5 ]; do
+      sleep 1
+      count=$((count + 1))
+    done
+    
+    # Force kill if still running
+    if ps -p "$UPLOADER_PID" >/dev/null 2>&1; then
+      warn "Uploader didn't stop gracefully, forcing..."
+      kill -9 "$UPLOADER_PID" 2>/dev/null || true
+      sleep 1
+    fi
+    
+    stopped=true
+  fi
+  
+  # Clean up PID file
+  rm -f .run/uploader.pid 2>/dev/null || true
+  
+  if [ "$stopped" = true ]; then
+    success "Uploader stopped"
+    UPLOADER_RUNNING=false
+    UPLOADER_PID=""
+    return 0
+  else
+    warn "Could not stop uploader"
+    return 1
+  fi
+}
+
+# Backup with validation (per review - missing item #2)
+backup_existing_config() {
+  local timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+  local backup_count=0
+  
+  if [ -f ".env" ]; then
+    if cp ".env" ".env.bak.${timestamp}" 2>/dev/null; then
+      info "Backed up .env to .env.bak.${timestamp}"
+      log_action "Created backup: .env.bak.${timestamp}"
+      backup_count=$((backup_count + 1))
+    else
+      warn "Could not backup .env file"
+    fi
+  fi
+  
+  if [ -f ".cloudflare-config.json" ]; then
+    if cp ".cloudflare-config.json" ".cloudflare-config.json.bak.${timestamp}" 2>/dev/null; then
+      info "Backed up config to .cloudflare-config.json.bak.${timestamp}"
+      log_action "Created backup: .cloudflare-config.json.bak.${timestamp}"
+      backup_count=$((backup_count + 1))
+    else
+      warn "Could not backup .cloudflare-config.json"
+    fi
+  fi
+  
+  if [ $backup_count -eq 0 ]; then
+    warn "No files to backup"
+  fi
+}
+
+# ============================================================================
+# INTERACTIVE MENUS
+# ============================================================================
+
+# Menu return codes (per review - challenge #1)
+# 0 = Continue to registration
+# 1 = User quit (clean exit)
+
+show_main_menu() {
+  while true; do
+    echo ""
+    echo "═══════════════════════════════════════════════════════════"
+    echo "${BOLD}🛰️  Rosen Bridge Monitor - User Registration${NC}"
+    echo "═══════════════════════════════════════════════════════════"
+    echo ""
+    echo "What would you like to do?"
+    echo ""
+    echo "  ${CYAN}[H]${NC} Show help and examples"
+    echo "  ${CYAN}[D]${NC} Dry run (check system readiness)"
+    echo "  ${CYAN}[R]${NC} Register (you'll need: invite code + worker URL)"
+    echo "  ${CYAN}[Q]${NC} Quit"
+    echo ""
+    read -r -p "Your choice: " choice
+    
+    case "$choice" in
+      [Hh])
+        log_action "User chose: Show help"
+        show_help
+        echo ""
+        read -r -p "Press Enter to return to menu..."
+        ;;
+      [Dd])
+        log_action "User chose: Dry run"
+        echo ""
+        if run_dry_run true; then
+          success "System check passed"
+        else
+          warn "System check found issues (see above)"
+        fi
+        echo ""
+        read -r -p "Press Enter to return to menu..."
+        ;;
+      [Rr])
+        log_action "User chose: Register new user"
+        return 0  # Proceed to registration
+        ;;
+      [Qq])
+        log_action "User chose: Quit from main menu"
+        info "Registration cancelled"
+        exit 0
+        ;;
+      *)
+        warn "Invalid choice. Please select H, D, R, or Q."
+        ;;
+    esac
+  done
+}
+
+show_detection_menu() {
+  while true; do
+    show_existing_registration
+    
+    echo "What would you like to do?"
+    echo ""
+    echo "  ${CYAN}[Q]${NC} Quit (no changes)"
+    echo "  ${CYAN}[S]${NC} Start monitoring with existing credentials"
+    echo "  ${CYAN}[R]${NC} Re-register (stops uploader, creates new dashboard)"
+    echo ""
+    read -r -p "Your choice: " choice
+    
+    case "$choice" in
+      [Qq])
+        log_action "User chose: Quit from detection menu"
+        info "No changes made"
+        exit 0
+        ;;
+      [Ss])
+        log_action "User chose: Start monitoring"
+        start_monitoring_with_existing
+        exit 0
+        ;;
+      [Rr])
+        log_action "User chose: Re-register"
+        # Stop uploader if running
+        if [ "$UPLOADER_RUNNING" = true ]; then
+          if ! stop_uploader; then
+            die "Cannot stop running uploader (PID: $UPLOADER_PID). Please stop it manually first."
+          fi
+        fi
+        
+        # Create backups
+        backup_existing_config
+        
+        return 0  # Proceed to registration
+        ;;
+      *)
+        warn "Invalid choice. Please select Q, S, or R."
+        ;;
+    esac
+  done
+}
+
+start_monitoring_with_existing() {
+  echo ""
+  info "Starting monitoring with existing credentials..."
+  
+  # Check if uploader is running
+  if [ "$UPLOADER_RUNNING" = false ]; then
+    if [ -x "./start-monitoring.sh" ]; then
+      info "Starting uploader via start-monitoring.sh..."
+      ./start-monitoring.sh &
+      success "Uploader started"
+    else
+      warn "start-monitoring.sh not found or not executable"
+      echo "Start manually: ${CYAN}node cloudflare-sync.js${NC}"
+    fi
+  else
+    success "Uploader already running (PID: $UPLOADER_PID)"
+  fi
+  
+  # Check Docker container
+  if command -v docker >/dev/null 2>&1; then
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "monitor"; then
+      success "Docker container already running"
+    else
+      info "Starting Docker container..."
+      if docker compose up -d 2>/dev/null; then
+        success "Docker container started"
+      else
+        warn "Could not start Docker container"
+      fi
+    fi
+  fi
+  
+  echo ""
+  success "Monitoring system ready"
+  [ -n "$DASHBOARD_URL" ] && echo "Dashboard: ${CYAN}$DASHBOARD_URL${NC}"
+}
+
+# ============================================================================
+# DRY RUN (comprehensive per review - missing item #3)
+# ============================================================================
+
+run_dry_run() {
+  local from_menu="${1:-false}"
+  
+  echo "${CYAN}${BOLD}=== DRY RUN MODE ===${NC}"
+  echo ""
+  
+  local issues=0
+  
+  # Check dependencies
+  echo "${BOLD}Checking dependencies...${NC}"
+  for cmd in curl jq node openssl; do
+    if command -v "$cmd" >/dev/null 2>&1; then
+      success "$cmd: installed"
+    else
+      warn "$cmd: NOT FOUND"
+      issues=$((issues + 1))
+    fi
+  done
+  echo ""
+  
+  # Check Node.js version
+  if command -v node >/dev/null 2>&1; then
+    local node_version=$(node --version 2>/dev/null | sed 's/v//')
+    local node_major=$(echo "$node_version" | cut -d. -f1)
+    if [ "$node_major" -ge 14 ]; then
+      success "Node.js version: $node_version (✓ >= 14.0.0)"
+    else
+      warn "Node.js version: $node_version (recommend >= 14.0.0)"
+    fi
+  fi
+  echo ""
+  
+  # Check passphrase-guard.js exists
+  echo "${BOLD}Checking project files...${NC}"
+  if [ -f "passphrase-guard.js" ]; then
+    success "passphrase-guard.js: found"
+  else
+    warn "passphrase-guard.js: NOT FOUND (passphrase validation will fail)"
+    issues=$((issues + 1))
+  fi
+  
+  if [ -f "setup-cloudflare.js" ]; then
+    success "setup-cloudflare.js: found"
+  else
+    warn "setup-cloudflare.js: NOT FOUND (registration will fail)"
+    issues=$((issues + 1))
+  fi
+  echo ""
+  
+  # Check worker health (if BASE_URL provided)
+  if [ -n "$BASE_URL" ]; then
+    echo "${BOLD}Checking worker health...${NC}"
+    info "Testing connection to: $BASE_URL"
+    
+    local http_status=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' "$BASE_URL/health" 2>/dev/null || echo "000")
+    
+    if [ "$http_status" = "200" ]; then
+      success "Worker is responding (HTTP 200)"
+    else
+      warn "Worker not responding (HTTP $http_status)"
+      issues=$((issues + 1))
+    fi
+    echo ""
+  else
+    warn "No BASE_URL provided - skipping worker health check"
+    echo "    Set via: --base-url https://your-worker.workers.dev"
+    echo ""
+  fi
+  
+  # Check disk space
+  echo "${BOLD}Checking system resources...${NC}"
+  local available_mb=$(df -m "$PROJECT_ROOT" 2>/dev/null | awk 'NR==2 {print $4}')
+  if [ -n "$available_mb" ] && [ "$available_mb" -ge 100 ]; then
+    success "Disk space: ${available_mb}MB available (✓ >= 100MB)"
+  else
+    warn "Disk space: ${available_mb}MB available (recommend >= 100MB)"
+  fi
+  
+  # Check write permissions
+  if touch "$PROJECT_ROOT/.test-write" 2>/dev/null; then
+    rm -f "$PROJECT_ROOT/.test-write"
+    success "Write permission: OK"
+  else
+    warn "Write permission: DENIED (cannot write to project directory)"
+    issues=$((issues + 1))
+  fi
+  echo ""
+  
+  # Summary
+  echo "════════════════════════════════════════"
+  if [ $issues -eq 0 ]; then
+    success "All checks passed! System is ready."
+    
+    # Only show command if NOT called from menu
+    if [ "$from_menu" = "false" ]; then
+      echo ""
+      echo "Run without --dry-run to register:"
+      echo "  ${CYAN}./scripts/register-user.sh --invite YOUR-CODE --base-url YOUR-WORKER-URL${NC}"
+    fi
+    return 0
+  else
+    warn "Found $issues issue(s). Please resolve before registering."
+    echo ""
+    return 1
+  fi
+}
+
+# ============================================================================
+# HELP
+# ============================================================================
+
+show_help() {
+  cat <<HELP
+${BOLD}Rosen Bridge Monitor - User Registration v${VERSION}${NC}
+
+${BOLD}USAGE:${NC}
+  $(basename "$0") [OPTIONS]
+
+${BOLD}INTERACTIVE MODE (Recommended for first-time users):${NC}
+  $(basename "$0")
+  
+  Shows menu with options:
+    [H] Help - Show this help text
+    [D] Dry run - Check system without registering
+    [R] Register - Start registration process
+    [Q] Quit - Exit without changes
+
+${BOLD}AUTOMATION MODE (For scripts and CI/CD):${NC}
+  $(basename "$0") --invite CODE --base-url URL [OPTIONS]
+
+${BOLD}REQUIRED:${NC}
+  --invite CODE          Registration invite code
+  --base-url URL         Your Cloudflare Worker URL (e.g., https://your-worker.workers.dev)
+
+${BOLD}OPTIONAL:${NC}
+  --passphrase-file PATH Read passphrase from file (for CI/automation)
+  --generated            Auto-generate passphrase (non-interactive)
+  --no-start             Skip "start monitoring now?" prompt
+  --force                Skip existing registration detection menu
+  --qr                   Generate QR code for dashboard URL
+  --qr-out FILE          QR code output file (default: dashboard-<id>.png)
+  --embed-passphrase     Embed passphrase in QR URL fragment (less secure)
+  --fragment-key KEY     Fragment key for embedded passphrase (default: p)
+  --dry-run              Validate setup without registering
+  --quiet                Minimal output (automation-friendly)
+  --version              Show version and exit
+  -h, --help             Show this help
+
+${BOLD}EXAMPLES:${NC}
+
+  ${CYAN}# Interactive registration (recommended)${NC}
+  ./scripts/register-user.sh
+
+  ${CYAN}# Auto-generate strong passphrase${NC}
+  ./scripts/register-user.sh --invite ABC-DEF-123 --base-url https://your-worker.workers.dev --generated
+
+  ${CYAN}# Generate QR code for mobile access${NC}
+  ./scripts/register-user.sh --invite ABC-DEF-123 --base-url https://your-worker.workers.dev --qr
+
+  ${CYAN}# CI/CD automation${NC}
+  echo "MySecure123!Pass" > /tmp/pass.txt
+  chmod 600 /tmp/pass.txt
+  ./scripts/register-user.sh --invite ABC-DEF-123 \\
+    --base-url https://your-worker.workers.dev \\
+    --passphrase-file /tmp/pass.txt \\
+    --no-start
+
+  ${CYAN}# Dry run (test without registering)${NC}
+  ./scripts/register-user.sh --dry-run --base-url https://your-worker.workers.dev
+
+${BOLD}BLOCKCHAIN PROJECT NOTE:${NC}
+  For Rosen Bridge monitoring, ensure your watchers are running:
+    docker ps | grep watcher
+
+${BOLD}EXIT CODES:${NC}
+  0 = Success
+  1 = User error (bad arguments, missing file)
+  2 = Validation error (weak passphrase, mismatches)
+  3 = Registration API error
+  4 = Prerequisites missing (Node.js, openssl)
+
+${BOLD}SECURITY:${NC}
+  - Passphrases validated using passphrase-guard.js policy
+  - Generated passphrases are cryptographically random (24+ chars)
+  - Passphrases never logged or echoed (except when generated)
+  - QR codes with embedded passphrases should be treated as sensitive
+
+${BOLD}MORE INFO:${NC}
+  https://github.com/rosen-bridge/operation/blob/dev/docs/watcher/deploy-docker.md
+
+HELP
+}
+
+# ============================================================================
+# PASSPHRASE FUNCTIONS
+# ============================================================================
+
+gen_passphrase() {
+  if ! command -v openssl >/dev/null 2>&1; then
+    die "openssl required for passphrase generation. Install: apt-get install openssl"
+  fi
+  
+  # Generate random bytes and convert to unambiguous base64-like characters
+  # Exclude ambiguous: l, 1, I, O, 0, o
+  # Allowed: A-H, J-N, P-Z (uppercase), a-k, m-n, p-z (lowercase), 2-9 (digits)
+  # That's: 23 uppercase + 24 lowercase + 8 digits = 55 characters
+  
+  local unambiguous="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"
+  local pass=""
+  
+  # Generate 20 random characters from unambiguous set
+  for i in {1..20}; do
+    local random_byte=$(openssl rand -hex 1)
+    local index=$((0x$random_byte % ${#unambiguous}))
+    pass="${pass}${unambiguous:$index:1}"
+  done
+  
+  # Append random suffix to guarantee all 4 character classes
+  # Pick random chars from each class (using unambiguous chars only)
+  local symbols="!@#$%^&*"
+  local digits="23456789"
+  local uppers="ABCDEFGHJKLMNPQRSTUVWXYZ"
+  local lowers="abcdefghjkmnpqrstuvwxyz"
+  
+  local sym_byte=$(openssl rand -hex 1)
+  local sym_idx=$((0x$sym_byte % ${#symbols}))
+  local sym_char="${symbols:$sym_idx:1}"
+  
+  local dig_byte=$(openssl rand -hex 1)
+  local dig_idx=$((0x$dig_byte % ${#digits}))
+  local dig_char="${digits:$dig_idx:1}"
+  
+  local upp_byte=$(openssl rand -hex 1)
+  local upp_idx=$((0x$upp_byte % ${#uppers}))
+  local upp_char="${uppers:$upp_idx:1}"
+  
+  local low_byte=$(openssl rand -hex 1)
+  local low_idx=$((0x$low_byte % ${#lowers}))
+  local low_char="${lowers:$low_idx:1}"
+  
+  # Combine in random order (shuffle the 4 chars)
+  local suffix_chars="${sym_char}${dig_char}${upp_char}${low_char}"
+  local shuffled=""
+  for i in {1..4}; do
+    local pos_byte=$(openssl rand -hex 1)
+    local pos=$((0x$pos_byte % ${#suffix_chars}))
+    shuffled="${shuffled}${suffix_chars:$pos:1}"
+    suffix_chars="${suffix_chars:0:$pos}${suffix_chars:$pos+1}"
+  done
+  
+  echo "${pass}${shuffled}"
+}
+
+
+validate_passphrase() {
+  local pass="$1"
+  local show_error="${2:-true}"
+  
+  # Check Node.js availability
+  if ! command -v node >/dev/null 2>&1; then
+    if [ "$show_error" = "true" ]; then
+      echo "${RED}✗${NC} Node.js required for passphrase validation" >&2
+      echo "  Install from: https://nodejs.org/" >&2
+      echo "  Or use: --generated (skips interactive validation)" >&2
+    fi
+    return 1
+  fi
+  
+  # Check passphrase-guard.js exists
+  if [ ! -f "passphrase-guard.js" ]; then
+    if [ "$show_error" = "true" ]; then
+      echo "${RED}✗${NC} passphrase-guard.js not found in project root" >&2
+    fi
+    return 1
+  fi
+  
+  # Validate using existing guard and capture error
+  export DASH_PASSPHRASE="$pass"
+  local error_msg
+  error_msg=$(node -e "require('./passphrase-guard').ensure()" 2>&1)
+  local exit_code=$?
+  unset DASH_PASSPHRASE
+  
+  if [ $exit_code -ne 0 ]; then
+    if [ "$show_error" = "true" ]; then
+      # Show the actual error from passphrase-guard.js
+      echo "" >&2
+      echo "${RED}✗ Passphrase validation failed${NC}" >&2
+      echo "" >&2
+      if [ -n "$error_msg" ]; then
+        # Clean up and show error message
+        echo "$error_msg" | grep -v "^Error:" | sed 's/^/  /' >&2
+      fi
+      echo "" >&2
+      echo "${BOLD}Passphrase Requirements:${NC}" >&2
+      echo "  • At least ${BOLD}12 characters${NC} OR ${BOLD}3+ words${NC} (space/hyphen separated)" >&2
+      echo "  • Must include ${BOLD}3 of 4${NC} character types:" >&2
+      echo "    - Lowercase letters (a-z)" >&2
+      echo "    - Uppercase letters (A-Z)" >&2
+      echo "    - Numbers (0-9)" >&2
+      echo "    - Symbols (!@#\$%^&*)" >&2
+      echo "  • Cannot be common weak passwords" >&2
+      echo "" >&2
+    fi
+    return 1
+  fi
+  
+  return 0
+}
+
+get_passphrase() {
+  local pass confirm retries=0
+  local validation_attempts=0
+  local max_validation_attempts=3
+  
+  # Non-interactive: --passphrase-file (with complete validation per review - bug #2)
+  if [ -n "${PASSPHRASE_FILE:-}" ]; then
+    if [ ! -f "$PASSPHRASE_FILE" ]; then
+      die "Passphrase file not found: $PASSPHRASE_FILE"
+    fi
+    
+    if [ ! -r "$PASSPHRASE_FILE" ]; then
+      die "Cannot read passphrase file: $PASSPHRASE_FILE (check permissions)"
+    fi
+    
+    # Check file permissions and warn if insecure
+    if command -v stat >/dev/null 2>&1; then
+      local perms=$(stat -c '%a' "$PASSPHRASE_FILE" 2>/dev/null || stat -f '%OLp' "$PASSPHRASE_FILE" 2>/dev/null || echo "")
+      if [ -n "$perms" ] && [ "$perms" != "600" ] && [ "$perms" != "400" ]; then
+        warn "Passphrase file has insecure permissions ($perms) - recommended: chmod 600"
+      fi
+    fi
+    
+    # Read first line only, strip trailing whitespace
+    pass="$(head -n 1 "$PASSPHRASE_FILE" 2>/dev/null | tr -d '\n\r')"
+    
+    if [ -z "$pass" ]; then
+      die "Passphrase file is empty: $PASSPHRASE_FILE"
+    fi
+    
+    # Validate even in file mode
+    if ! validate_passphrase "$pass"; then
+      die "Passphrase from file failed validation"
+    fi
+    
+    echo "$pass"
+    return 0
+  fi
+  
+  # Non-interactive: --generated
+  if [ "${FORCE_GENERATED}" -eq 1 ]; then
+    pass="$(gen_passphrase)"
+    echo "$pass"
+    return 0
+  fi
+  
+  # Interactive: prompt for passphrase or auto-generate with validation loop
+  while [ $validation_attempts -lt $max_validation_attempts ]; do
+    if [ $validation_attempts -eq 0 ]; then
+      # First attempt - show full intro
+      echo ""
+      echo "${CYAN}Choose a passphrase for dashboard access${NC}"
+      echo "This will encrypt your monitoring data"
+      echo ""
+      echo "${BOLD}Requirements:${NC} 12+ chars OR 3+ words, with 3 of 4 types (upper/lower/digit/symbol)"
+      echo "${BOLD}Easy option:${NC} Press Enter to auto-generate a strong passphrase"
+      echo ""
+    else
+      # Retry attempts - show condensed prompt
+      echo ""
+      echo "${CYAN}Try again${NC} (attempt $(($validation_attempts + 1)) of $max_validation_attempts)"
+      echo "${BOLD}Tip:${NC} Press Enter to auto-generate instead"
+      echo ""
+    fi
+    
+    read -s -p "Enter passphrase (or press Enter to auto-generate): " pass
+    echo ""
+    
+    if [ -z "$pass" ]; then
+      # Auto-generate
+      pass="$(gen_passphrase)"
+      echo "" >&2
+      echo "═══════════════════════════════════════════════════════════" >&2
+      echo "${GREEN}${BOLD}✓ Generated Strong Passphrase (SAVE THIS NOW)${NC}" >&2
+      echo "" >&2
+      echo "  ${BOLD}${pass}${NC}" >&2
+      echo "" >&2
+      echo "═══════════════════════════════════════════════════════════" >&2
+      echo "${YELLOW}This passphrase will only be shown ONCE.${NC}" >&2
+      echo "Write it down or save it in a password manager now!" >&2
+      echo "" >&2
+      read -p "Press Enter after you've saved the passphrase..."
+      echo "" >&2
+      echo "$pass"
+      return 0
+    fi
+    
+    # Manual entry: validate (errors are shown by validate_passphrase)
+    if validate_passphrase "$pass" true; then
+      # Validation passed, now confirm match with bounded retries
+      retries=0
+      while true; do
+        read -s -p "Re-enter passphrase to confirm: " confirm
+        echo ""
+        
+        if [ "$pass" = "$confirm" ]; then
+          success "Passphrase confirmed"
+          echo "$pass"
+          return 0
+        fi
+        
+        retries=$((retries + 1))
+        if [ $retries -ge $MAX_MISMATCH_RETRIES ]; then
+          echo ""
+          die "Too many mismatches ($MAX_MISMATCH_RETRIES attempts). Please start over."
+        fi
+        
+        echo "${RED}✗${NC} Passphrases do not match (attempt $retries/$MAX_MISMATCH_RETRIES)"
+        echo ""
+        read -s -p "Enter passphrase again: " pass
+        echo ""
+        
+        # Re-validate the new entry (don't show errors on retry here)
+        if ! validate_passphrase "$pass" false; then
+          echo "${RED}✗${NC} Passphrase still doesn't meet requirements"
+          validation_attempts=$((validation_attempts + 1))
+          break  # Break inner loop, continue outer validation loop
+        fi
+      done
+      
+      # Check if we should continue outer loop
+      if [ $validation_attempts -ge $max_validation_attempts ]; then
+        break
+      fi
+    else
+      # Validation failed - increment counter
+      validation_attempts=$((validation_attempts + 1))
+    fi
+  done
+  
+  # Reached max attempts
+  echo "" >&2
+  echo "${RED}✗ Maximum validation attempts reached ($max_validation_attempts)${NC}" >&2
+  echo "" >&2
+  echo "Would you like to auto-generate a strong passphrase instead?" >&2
+  read -r -p "[Y/n]: " auto_gen
+  auto_gen="${auto_gen:-Y}"
+  
+  if [[ "$auto_gen" =~ ^[Yy]$ ]]; then
+    pass="$(gen_passphrase)"
+    echo "" >&2
+    echo "═══════════════════════════════════════════════════════════" >&2
+    echo "${GREEN}${BOLD}✓ Generated Strong Passphrase (SAVE THIS NOW)${NC}" >&2
+    echo "" >&2
+    echo "  ${BOLD}${pass}${NC}" >&2
+    echo "" >&2
+    echo "═══════════════════════════════════════════════════════════" >&2
+    echo "${YELLOW}This passphrase will only be shown ONCE.${NC}" >&2
+    echo "Write it down or save it in a password manager now!" >&2
+    echo "" >&2
+    read -p "Press Enter after you've saved the passphrase..."
+    echo "" >&2
+    echo "$pass"
+    return 0
+  else
+    die "Registration cancelled. Please start over when ready."
+  fi
+}
+
+# ============================================================================
+# QR CODE FUNCTIONS
+# ============================================================================
+
+generate_qr_code() {
+  local url="$1"
+  local output_file="$2"
+  local passphrase="$3"
+  
+  if ! command -v qrencode >/dev/null 2>&1; then
+    warn "qrencode not installed - skipping QR code generation"
+    echo "  Install: sudo apt-get install -y qrencode"
+    return 1
+  fi
+  
+  local final_url="$url"
+  
+  # Embed passphrase if requested
+  if [ "$EMBED_PASSPHRASE_QR" -eq 1 ]; then
+    if ! command -v jq >/dev/null 2>&1; then
+      warn "jq not installed - cannot embed passphrase in URL"
+      echo "  Install: sudo apt-get install -y jq"
+      return 1
+    fi
+    
+    # URL-encode passphrase
+    local encoded_pass="$(printf '%s' "$passphrase" | jq -sRr @uri)"
+    final_url="${url}#${QR_FRAGMENT_KEY}=${encoded_pass}"
+    
+    warn "Passphrase embedded in QR code URL fragment"
+    echo "  ${YELLOW}This QR code contains your passphrase - treat as sensitive!${NC}"
+  fi
+  
+  # Generate QR code
+  if qrencode -o "$output_file" "$final_url" 2>/dev/null; then
+    success "QR code saved to: $output_file"
+    
+    # Show in terminal if supported
+    echo ""
+    echo "${CYAN}QR Code (scan with mobile device):${NC}"
+    qrencode -t ansiutf8 "$final_url" 2>/dev/null || true
+    echo ""
+    
+    return 0
+  else
+    warn "Failed to generate QR code"
+    return 1
+  fi
+}
+
+# ============================================================================
+# REGISTRATION FUNCTIONS
+# ============================================================================
+
+check_dependencies() {
+  local missing=()
+  
+  for cmd in curl jq node; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      missing+=("$cmd")
+    fi
+  done
+  
+  if [ ${#missing[@]} -gt 0 ]; then
+    die "Missing required dependencies: ${missing[*]}"
+  fi
+  
+  if [ "$FORCE_GENERATED" -eq 1 ] || [ "$GENERATE_QR" -eq 1 ]; then
+    if ! command -v openssl >/dev/null 2>&1; then
+      die "openssl required for passphrase generation"
+    fi
+  fi
+  
+  success "All dependencies available"
+}
+
+check_worker_health() {
+  info "Checking worker health at $BASE_URL..."
+  
+  local http_status
+  http_status="$(curl -sS -m 5 -o /dev/null -w '%{http_code}' "$BASE_URL/health" 2>/dev/null || echo "000")"
+  
+  if [ "$http_status" = "200" ]; then
+    success "Worker is running"
+  else
+    die "Worker not responding at $BASE_URL (HTTP $http_status)"
+  fi
+}
+
+perform_registration() {
+  local passphrase="$1"
+  local max_attempts=3
+  local attempt=1
+  
+  info "Starting registration..."
+  log_action "Beginning registration process"
+  
+  # Backup existing config if present
+  if [ -f "$CONFIG_FILE" ]; then
+    local backup="${CONFIG_FILE}.bak.$(date -u +%Y%m%dT%H%M%SZ)"
+    if mv "$CONFIG_FILE" "$backup" 2>/dev/null; then
+      info "Backed up existing config to: $backup"
+      log_action "Backed up config to: $backup"
+    fi
+  fi
+  
+  # Check setup-cloudflare.js exists
+  [ -f "setup-cloudflare.js" ] || die "setup-cloudflare.js not found in project root"
+  
+  # Retry loop for invitation code
+  while [ $attempt -le $max_attempts ]; do
+    # Get invitation code if not provided (or if retry)
+    if [ -z "$INVITE_CODE" ] || [ $attempt -gt 1 ]; then
+      if [ $attempt -eq 1 ]; then
+        read -r -p "Invitation code: " INVITE_CODE
+      else
+        echo ""
+        warn "Attempt $attempt of $max_attempts"
+        read -r -p "Enter invitation code (or press Ctrl+C to cancel): " INVITE_CODE
+      fi
+      [ -n "$INVITE_CODE" ] || die "Invitation code required"
+    fi
+    
+    if [ $attempt -gt 1 ]; then
+      info "Trying registration with new code..."
+    fi
+    
+    # Create temporary input file
+    local temp_input
+    temp_input=$(mktemp)
+    echo "$INVITE_CODE" > "$temp_input"
+    
+    # Run registration with input redirection
+    export DASH_PASSPHRASE="$passphrase"
+    local registration_output
+    local exit_code
+    
+    # Temporarily disable exit-on-error to capture output even on failure
+    set +e
+    registration_output=$(BASE_URL="$BASE_URL" node setup-cloudflare.js < "$temp_input" 2>&1)
+    exit_code=$?
+    set -e
+    
+    # Clean up
+    rm -f "$temp_input"
+    
+    # Check if registration succeeded
+    if [ $exit_code -eq 0 ] && [ -f "$CONFIG_FILE" ]; then
+      unset DASH_PASSPHRASE
+      success "Registration successful"
+      log_action "Registration completed successfully"
+      return 0
+    fi
+    
+    # Registration failed - show filtered output
+    echo "$registration_output" | grep -v "^Cloudflare Registration\|^Registering with Cloudflare\|^Updating .env\|^Updated .env\|^Passphrase Configuration\|^You need a passphrase\|^This should be strong\|^Keep your .env\|^Found existing .env"
+    
+    
+    # Check if this is an invite-related error (can retry)
+    if echo "$registration_output" | grep -q "HTTP 400\|HTTP 409\|Invalid invitation\|already used"; then
+      if [ $attempt -lt $max_attempts ]; then
+        echo "" >&2
+        warn "Registration failed due to invalid or used invitation code."
+        # Clear INVITE_CODE to prompt for new one
+        INVITE_CODE=""
+        attempt=$((attempt + 1))
+        continue
+      else
+        # Max attempts reached
+        echo "" >&2
+        echo "${RED}✗${NC} All $max_attempts registration attempts failed." >&2
+        echo "" >&2
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+        echo "  Please contact your administrator to request a fresh" >&2
+        echo "  invitation code. Invitation codes can only be used once." >&2
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+        echo "" >&2
+        unset DASH_PASSPHRASE
+        exit 3
+      fi
+    else
+      # Non-invite error (worker down, network issue, etc.) - don't retry
+      echo "" >&2
+      unset DASH_PASSPHRASE
+      die "Registration failed. Check the error message above for details."
+    fi
+  done
+}
+
+
+update_env_file() {
+  local passphrase="$1"
+  
+  # Extract credentials from config
+  local public_id write_token salt
+  public_id="$(jq -er '.publicId' "$CONFIG_FILE")"
+  write_token="$(jq -er '.writeToken' "$CONFIG_FILE")"
+  salt="$(jq -er '.salt' "$CONFIG_FILE")"
+  
+  # Update .env file
+  if [ -f ".env" ]; then
+    # Remove existing Cloudflare lines if present
+    sed -i.bak '/^# Cloudflare Worker Configuration/,/^DASH_SALT_B64=/d' .env 2>/dev/null || true
+    sed -i.bak '/^DASH_PASSPHRASE=/d' .env 2>/dev/null || true
+  fi
+  
+  # Append configuration
+  cat >> .env <<ENV_EOF
 
 # Cloudflare Worker Configuration
+# Generated by register-user.sh v${VERSION}
 # Updated on: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # These values are specific to YOUR registration - do not share!
 BASE_URL=$BASE_URL
@@ -107,52 +1143,55 @@ WRITE_TOKEN=$WRITE_TOKEN
 DASH_SALT_B64=$SALT
 ENV_EOF
 
-# Secure passphrase storage prompt
-echo ""
-echo "${YELLOW}⚠️  SECURITY NOTICE: Passphrase Storage${NC}"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "The passphrase encrypts your monitoring data."
-echo "${GREEN}Recommended:${NC} Enter it manually each time for maximum security."
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-
-SAVE_PASS=""
-while [[ ! "$SAVE_PASS" =~ ^[YyNn]$ ]]; do
-  read -p "Save passphrase to .env file? [y/N]: " SAVE_PASS
-  SAVE_PASS=${SAVE_PASS:-n}
-done
-
-if [[ "$SAVE_PASS" =~ ^[Yy]$ ]]; then
+  # Passphrase storage prompt
   echo ""
-  echo "${RED}⚠️  WARNING: The passphrase will be stored in PLAINTEXT in .env${NC}"
-  echo "${RED}⚠️  Anyone with access to this file can decrypt your monitoring data.${NC}"
+  echo "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
+  echo "${YELLOW}⚠  SECURITY NOTICE: Passphrase Storage${NC}"
+  echo "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
+  echo "The passphrase encrypts your monitoring data."
+  echo "${GREEN}Recommended:${NC} Enter it manually each time for maximum security."
   echo ""
   
-  CONFIRM_SAVE=""
-  while [[ ! "$CONFIRM_SAVE" =~ ^[YyNn]$ ]]; do
-    read -p "Are you absolutely sure you want to save it? [y/N]: " CONFIRM_SAVE
-    CONFIRM_SAVE=${CONFIRM_SAVE:-n}
+  local save_pass=""
+  while [[ ! "$save_pass" =~ ^[YyNn]$ ]]; do
+    read -p "Save passphrase to .env file? [y/N]: " save_pass
+    save_pass=${save_pass:-n}
   done
-
-  if [[ "$CONFIRM_SAVE" =~ ^[Yy]$ ]]; then
-    echo "DASH_PASSPHRASE=$PASSPHRASE" >> .env
-    chmod 600 .env
-    echo "${GREEN}✓${NC} Passphrase saved with restrictive permissions (600)."
-    PASSPHRASE_SAVED=true
+  
+  local passphrase_saved=false
+  
+  if [[ "$save_pass" =~ ^[Yy]$ ]]; then
+    echo ""
+    echo "${RED}⚠  WARNING: Passphrase will be stored in PLAINTEXT in .env${NC}"
+    echo "${RED}⚠  Anyone with access to this file can decrypt your data.${NC}"
+    echo ""
+    
+    local confirm_save=""
+    while [[ ! "$confirm_save" =~ ^[YyNn]$ ]]; do
+      read -p "Are you absolutely sure? [y/N]: " confirm_save
+      confirm_save=${confirm_save:-n}
+    done
+    
+    if [[ "$confirm_save" =~ ^[Yy]$ ]]; then
+      echo "DASH_PASSPHRASE=$passphrase" >> .env
+      chmod 600 .env 2>/dev/null || true
+      success "Passphrase saved with restrictive permissions (600)"
+      log_action "Passphrase saved to .env (user confirmed)"
+      passphrase_saved=true
+    else
+      success "Passphrase not saved - secure choice"
+      log_action "Passphrase not saved (user declined)"
+    fi
   else
-    echo "${GREEN}✓${NC} Passphrase not saved - you chose wisely for security."
-    PASSPHRASE_SAVED=false
+    success "Passphrase not saved - secure choice"
+    log_action "Passphrase not saved (user declined)"
   fi
-else
-  echo "${GREEN}✓${NC} Passphrase not saved - you chose wisely for security."
-  PASSPHRASE_SAVED=false
-fi
-
-# Generate start script
-if [ "$PASSPHRASE_SAVED" = true ]; then
-  # Passphrase is in .env - simple script
-  cat > "start-monitoring.sh" <<SCRIPT_EOF
+  
+  # Generate start script
+  if [ "$passphrase_saved" = true ]; then
+    cat > "start-monitoring.sh" <<'SCRIPT_EOF'
 #!/usr/bin/env bash
+set -euo pipefail
 
 # Load environment from .env
 if [ -f .env ]; then
@@ -162,17 +1201,17 @@ if [ -f .env ]; then
 fi
 
 # Check required variables
-[ -z "\${BASE_URL:-}" ] && { echo "Error: BASE_URL not set in .env"; exit 1; }
-[ -z "\${WRITE_TOKEN:-}" ] && { echo "Error: WRITE_TOKEN not set in .env"; exit 1; }
-[ -z "\${DASH_SALT_B64:-}" ] && { echo "Error: DASH_SALT_B64 not set in .env"; exit 1; }
-[ -z "\${DASH_PASSPHRASE:-}" ] && { echo "Error: DASH_PASSPHRASE not set in .env"; exit 1; }
+[ -z "${BASE_URL:-}" ] && { echo "Error: BASE_URL not set in .env"; exit 1; }
+[ -z "${WRITE_TOKEN:-}" ] && { echo "Error: WRITE_TOKEN not set in .env"; exit 1; }
+[ -z "${DASH_SALT_B64:-}" ] && { echo "Error: DASH_SALT_B64 not set in .env"; exit 1; }
+[ -z "${DASH_PASSPHRASE:-}" ] && { echo "Error: DASH_PASSPHRASE not set in .env"; exit 1; }
 
 node cloudflare-sync.js
 SCRIPT_EOF
-else
-  # Passphrase not saved - prompt for it
-  cat > "start-monitoring.sh" <<SCRIPT_EOF
+  else
+    cat > "start-monitoring.sh" <<'SCRIPT_EOF'
 #!/usr/bin/env bash
+set -euo pipefail
 
 # Load environment from .env
 if [ -f .env ]; then
@@ -182,12 +1221,12 @@ if [ -f .env ]; then
 fi
 
 # Check required variables
-[ -z "\${BASE_URL:-}" ] && { echo "Error: BASE_URL not set in .env"; exit 1; }
-[ -z "\${WRITE_TOKEN:-}" ] && { echo "Error: WRITE_TOKEN not set in .env"; exit 1; }
-[ -z "\${DASH_SALT_B64:-}" ] && { echo "Error: DASH_SALT_B64 not set in .env"; exit 1; }
+[ -z "${BASE_URL:-}" ] && { echo "Error: BASE_URL not set in .env"; exit 1; }
+[ -z "${WRITE_TOKEN:-}" ] && { echo "Error: WRITE_TOKEN not set in .env"; exit 1; }
+[ -z "${DASH_SALT_B64:-}" ] && { echo "Error: DASH_SALT_B64 not set in .env"; exit 1; }
 
 # Prompt for passphrase if not in .env
-if [ -z "\${DASH_PASSPHRASE:-}" ]; then
+if [ -z "${DASH_PASSPHRASE:-}" ]; then
   echo "🔐 Passphrase required for encryption"
   read -s -p "Enter passphrase: " DASH_PASSPHRASE
   echo ""
@@ -196,25 +1235,289 @@ fi
 
 node cloudflare-sync.js
 SCRIPT_EOF
-fi
-chmod +x "start-monitoring.sh"
+  fi
+  
+  chmod +x "start-monitoring.sh"
+  success "Created start-monitoring.sh"
+  log_action "Generated start-monitoring.sh script"
+  
+  echo "$public_id"  # Return public_id for caller
+}
 
-# Output
-echo ""
-echo "${GREEN}✓${NC} Registered: $PUBLIC_ID"
-echo "${GREEN}✓${NC} Credentials saved to .env"
-echo "${GREEN}✓${NC} Created: start-monitoring.sh"
-echo ""
+# Start monitoring prompt with timeout (per review - recommendation #2)
+start_monitoring_prompt() {
+  # Skip if --no-start flag provided
+  if [ "$NO_START" -eq 1 ]; then
+    echo ""
+    echo "═══════════════════════════════════════════════════════════"
+    success "Registration complete!"
+    echo ""
+    echo "Start monitoring manually:"
+    echo "  ${CYAN}docker compose up -d${NC}  (recommended)"
+    echo "  ${CYAN}./start-monitoring.sh${NC}  (alternative)"
+    echo "═══════════════════════════════════════════════════════════"
+    return 0
+  fi
+  
+  # Check what's available
+  local has_docker=false
+  local has_compose=false
+  local has_script=false
+  
+  if command -v docker >/dev/null 2>&1; then
+    has_docker=true
+    if docker compose version >/dev/null 2>&1; then
+      has_compose=true
+    fi
+  fi
+  
+  [ -x "./start-monitoring.sh" ] && has_script=true
+  
+  echo ""
+  
+  # Timeout after 30 seconds (auto-skip)
+  local yn
+  if read -r -t 30 -p "Start monitoring now? [Y/n] (auto-skip in 30s) " yn 2>/dev/null; then
+    yn="${yn:-Y}"
+  else
+    echo ""
+    info "Prompt timed out. Start monitoring manually when ready."
+    return 0
+  fi
+  
+  if [[ ! "$yn" =~ ^[Yy]$ ]]; then
+    echo ""
+    success "Registration complete. Start monitoring when ready:"
+    if [ "$has_compose" = true ]; then
+      echo "  ${CYAN}docker compose up -d${NC}"
+    elif [ "$has_script" = true ]; then
+      echo "  ${CYAN}./start-monitoring.sh${NC}"
+    fi
+    return 0
+  fi
+  
+  # Try to start monitoring
+  if [ "$has_compose" = true ]; then
+    info "Starting monitoring with Docker Compose..."
+    if docker compose up -d --build 2>&1; then
+      success "Monitoring started successfully!"
+      echo ""
+      echo "View logs: ${CYAN}docker compose logs -f${NC}"
+      echo "Stop monitoring: ${CYAN}docker compose down${NC}"
+    else
+      warn "Failed to start Docker Compose"
+      if [ "$has_script" = true ]; then
+        echo "Try: ${CYAN}./start-monitoring.sh${NC}"
+      fi
+    fi
+  elif [ "$has_script" = true ]; then
+    info "Starting monitoring with start-monitoring.sh..."
+    if ./start-monitoring.sh & then
+      success "Monitoring started!"
+    else
+      warn "Failed to start monitoring script"
+    fi
+  else
+    warn "No startup method found"
+    echo "Install Docker or run: ${CYAN}node cloudflare-sync.js${NC}"
+  fi
+}
 
-if [ "$PASSPHRASE_SAVED" = true ]; then
-  echo "${YELLOW}IMPORTANT:${NC} Your passphrase has been saved to .env"
-  echo "Keep this file secure and do not commit it to version control!"
-else
-  echo "${GREEN}SECURITY:${NC} Passphrase not stored locally"
-  echo "You'll be prompted to enter it when starting monitoring"
-fi
+show_summary() {
+  local public_id="$1"
+  local dashboard_url
+  dashboard_url="$(jq -er '.dashboardUrl' "$CONFIG_FILE")"
+  
+  echo ""
+  echo "═══════════════════════════════════════════════════════════"
+  echo "${GREEN}${BOLD}✓ Registration Complete${NC}"
+  echo "═══════════════════════════════════════════════════════════"
+  echo "${BOLD}Public ID:${NC}     $public_id"
+  echo "${BOLD}Dashboard:${NC}     ${CYAN}$dashboard_url${NC}"
+  echo "${BOLD}Worker URL:${NC}    $BASE_URL"
+  echo "${BOLD}Config File:${NC}   $CONFIG_FILE"
+  echo "═══════════════════════════════════════════════════════════"
+  
+  log_action "Registration summary displayed"
+  
+  echo "$dashboard_url"  # Return URL for QR generation
+}
 
-echo ""
-echo "Dashboard: ${CYAN}$DASHBOARD_URL${NC}"
-echo ""
-echo "To start monitoring: ${CYAN}./scripts/monitor_control.sh start${NC}"
+# ============================================================================
+# MAIN EXECUTION
+# ============================================================================
+
+parse_args() {
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --invite)
+        shift
+        INVITE_CODE="${1:-}"
+        [ -n "$INVITE_CODE" ] || die "--invite requires a code"
+        ;;
+      --base-url)
+        shift
+        BASE_URL="${1:-}"
+        [ -n "$BASE_URL" ] || die "--base-url requires a value"
+        ;;
+      --passphrase-file)
+        shift
+        PASSPHRASE_FILE="${1:-}"
+        [ -n "$PASSPHRASE_FILE" ] || die "--passphrase-file requires a path"
+        ;;
+      --generated)
+        FORCE_GENERATED=1
+        ;;
+      --no-start)
+        NO_START=1
+        ;;
+      --force)
+        FORCE=1
+        ;;
+      --qr)
+        GENERATE_QR=1
+        ;;
+      --qr-out)
+        shift
+        QR_OUT_FILE="${1:-}"
+        [ -n "$QR_OUT_FILE" ] || die "--qr-out requires a filename"
+        ;;
+      --embed-passphrase)
+        EMBED_PASSPHRASE_QR=1
+        GENERATE_QR=1  # Auto-enable QR if embedding
+        ;;
+      --fragment-key)
+        shift
+        QR_FRAGMENT_KEY="${1:-p}"
+        ;;
+      --dry-run)
+        DRY_RUN=1
+        ;;
+      --quiet)
+        QUIET=1
+        ;;
+      --version)
+        echo "register-user.sh v${VERSION}"
+        exit 0
+        ;;
+      -h|--help)
+        show_help
+        exit 0
+        ;;
+      *)
+        die "Unknown argument: $1 (use --help for usage)"
+        ;;
+    esac
+    shift
+  done
+}
+
+main() {
+  setup_colors
+  parse_args "$@"
+  
+  log_action "Script started (version $VERSION)"
+  
+  # Handle dry run
+  if [ "$DRY_RUN" -eq 1 ]; then
+    run_dry_run
+    exit $?
+  fi
+  
+  # Check TTY for interactive mode (per review - challenge #2)
+  if [ -z "$INVITE_CODE" ] && ! is_interactive; then
+    cat >&2 <<EOF
+${RED}✗${NC} Interactive mode requires a terminal
+
+This script detected no TTY (running from cron, systemd, or pipe).
+Use automation flags instead:
+
+  $0 --invite CODE --base-url URL [--generated] [--no-start]
+
+See --help for more options.
+EOF
+    exit 1
+  fi
+  
+  # Check for existing registration
+  local has_existing=false
+  if check_existing_registration; then
+    has_existing=true
+  fi
+  
+  # Handle force mode (per review - bug #3)
+  if [ "$FORCE" -eq 1 ] && [ -n "$INVITE_CODE" ]; then
+    if [ "$has_existing" = true ]; then
+      info "Force re-registration mode"
+      log_action "Force mode: skipping detection menu"
+      
+      # Stop uploader if running
+      if [ "$UPLOADER_RUNNING" = true ]; then
+        if ! stop_uploader; then
+          die "Cannot stop running uploader (PID: $UPLOADER_PID). Stop it manually first."
+        fi
+      fi
+      
+      # Create backups
+      backup_existing_config
+    fi
+    # Skip menus, proceed to registration
+  else
+    # Interactive mode
+    if [ -z "$INVITE_CODE" ]; then
+      # Show main menu
+      show_main_menu
+      
+      # Check again for existing registration (user chose [R] from main menu)
+      if check_existing_registration; then
+        # Show detection menu
+        show_detection_menu
+      fi
+    else
+      # Non-interactive with invite, but check for existing
+      if [ "$has_existing" = true ]; then
+        show_detection_menu
+      fi
+    fi
+  fi
+  
+  # At this point, user wants to proceed with registration
+  
+  # BASE_URL is already loaded from .env at script start
+  info "Using worker: $BASE_URL"
+  
+  # Run checks
+  check_dependencies
+  check_worker_health
+  
+  # Get and validate passphrase
+  PASSPHRASE="$(get_passphrase)"
+  
+  # Perform registration
+  perform_registration "$PASSPHRASE"
+  
+  # Update environment files
+  local public_id
+  public_id="$(update_env_file "$PASSPHRASE")"
+  
+  # Show summary and get dashboard URL
+  local dashboard_url
+  dashboard_url="$(show_summary "$public_id")"
+  
+  # Generate QR code if requested
+  if [ "$GENERATE_QR" -eq 1 ]; then
+    [ -z "$QR_OUT_FILE" ] && QR_OUT_FILE="dashboard-${public_id}.png"
+    echo ""
+    generate_qr_code "$dashboard_url" "$QR_OUT_FILE" "$PASSPHRASE" || true
+  fi
+  
+  # Prompt to start monitoring
+  start_monitoring_prompt
+  
+  echo ""
+  success "All done! 🚀"
+  log_action "Script completed successfully"
+}
+
+# Run main function
+main "$@"

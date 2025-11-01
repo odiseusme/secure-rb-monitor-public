@@ -69,3 +69,4 @@ Thumbs.db
 # !start-monitoring.sh
 # !scripts/*.sh
 # !worker/mute-mouse-2cd2/wrangler.toml
+worker/mute-mouse-2cd2/create_new_user_register_and_run.md
