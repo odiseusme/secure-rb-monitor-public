@@ -1140,7 +1140,7 @@ update_env_file() {
 # These values are specific to YOUR registration - do not share!
 BASE_URL=$BASE_URL
 WRITE_TOKEN=$WRITE_TOKEN
-DASH_SALT_B64=$SALT
+DASH_SALT_B64=$salt
 ENV_EOF
 
   # Passphrase storage prompt
@@ -1504,11 +1504,42 @@ EOF
   local dashboard_url
   dashboard_url="$(show_summary "$public_id")"
   
-  # Generate QR code if requested
+  # Generate QR code if requested or prompt in interactive mode
   if [ "$GENERATE_QR" -eq 1 ]; then
     [ -z "$QR_OUT_FILE" ] && QR_OUT_FILE="dashboard-${public_id}.png"
     echo ""
     generate_qr_code "$dashboard_url" "$QR_OUT_FILE" "$PASSPHRASE" || true
+  elif is_interactive && [ -z "$INVITE_CODE" ]; then
+    # Interactive mode: offer QR code generation
+    echo ""
+    local gen_qr=""
+    while [[ ! "$gen_qr" =~ ^[YyNn]$ ]]; do
+      read -p "Generate QR code for easy mobile access? [y/N]: " gen_qr
+      gen_qr=${gen_qr:-n}
+    done
+    
+    if [[ "$gen_qr" =~ ^[Yy]$ ]]; then
+      QR_OUT_FILE="dashboard-${public_id}.png"
+      
+      # Ask about passphrase embedding
+      echo ""
+      echo "${YELLOW}⚠  Security Notice:${NC} Embedding passphrase in QR makes auto-login possible"
+      echo "   but anyone with the QR code can access your dashboard."
+      echo ""
+      
+      local embed_qr=""
+      while [[ ! "$embed_qr" =~ ^[YyNn]$ ]]; do
+        read -p "Embed passphrase for auto-login? [y/N]: " embed_qr
+        embed_qr=${embed_qr:-n}
+      done
+      
+      if [[ "$embed_qr" =~ ^[Yy]$ ]]; then
+        EMBED_PASSPHRASE_QR=1
+      fi
+      
+      echo ""
+      generate_qr_code "$dashboard_url" "$QR_OUT_FILE" "$PASSPHRASE" || true
+    fi
   fi
   
   # Prompt to start monitoring
