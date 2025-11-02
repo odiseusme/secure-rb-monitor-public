@@ -961,10 +961,18 @@ generate_qr_code() {
   if qrencode -o "$output_file" "$final_url" 2>/dev/null; then
     success "QR code saved to: $output_file"
     
-    # Show in terminal if supported (smaller size for better fit)
+    # Show in terminal if supported (minimal margin for compact size)
     echo ""
     echo "${CYAN}QR Code (scan with mobile device):${NC}"
-    qrencode -s 1 -t ansiutf8 "$final_url" 2>/dev/null || true
+    echo ""
+    if qrencode -m 0 -t ANSIUTF8 "$final_url" 2>/dev/null; then
+      echo ""
+      echo "${YELLOW}Tip: If QR code doesn't fit on screen, open the saved file:${NC}"
+      echo "  ${BOLD}$output_file${NC}"
+    else
+      echo "${YELLOW}Terminal display not available. Open the saved file:${NC}"
+      echo "  ${BOLD}$output_file${NC}"
+    fi
     echo ""
     
     return 0
