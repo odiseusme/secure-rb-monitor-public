@@ -1143,31 +1143,31 @@ DASH_SALT_B64=$salt
 ENV_EOF
 
   # Passphrase storage prompt
-  echo ""
-  echo "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
-  echo "${YELLOW}⚠  SECURITY NOTICE: Passphrase Storage${NC}"
-  echo "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
-  echo "The passphrase encrypts your monitoring data."
-  echo "${GREEN}Recommended:${NC} Enter it manually each time for maximum security."
-  echo ""
+  echo "" >&2
+  echo "${YELLOW}═══════════════════════════════════════════════════════════${NC}" >&2
+  echo "${YELLOW}⚠  SECURITY NOTICE: Passphrase Storage${NC}" >&2
+  echo "${YELLOW}═══════════════════════════════════════════════════════════${NC}" >&2
+  echo "The passphrase encrypts your monitoring data." >&2
+  echo "${GREEN}Recommended:${NC} Enter it manually each time for maximum security." >&2
+  echo "" >&2
   
   local save_pass=""
   while [[ ! "$save_pass" =~ ^[YyNn]$ ]]; do
-    read -p "Save passphrase to .env file? [y/N]: " save_pass
+    read -p "Save passphrase to .env file? [y/N]: " save_pass >&2
     save_pass=${save_pass:-n}
   done
   
   local passphrase_saved=false
   
   if [[ "$save_pass" =~ ^[Yy]$ ]]; then
-    echo ""
-    echo "${RED}⚠  WARNING: Passphrase will be stored in PLAINTEXT in .env${NC}"
-    echo "${RED}⚠  Anyone with access to this file can decrypt your data.${NC}"
-    echo ""
+    echo "" >&2
+    echo "${RED}⚠  WARNING: Passphrase will be stored in PLAINTEXT in .env${NC}" >&2
+    echo "${RED}⚠  Anyone with access to this file can decrypt your data.${NC}" >&2
+    echo "" >&2
     
     local confirm_save=""
     while [[ ! "$confirm_save" =~ ^[YyNn]$ ]]; do
-      read -p "Are you absolutely sure? [y/N]: " confirm_save
+      read -p "Are you absolutely sure? [y/N]: " confirm_save >&2
       confirm_save=${confirm_save:-n}
     done
     
