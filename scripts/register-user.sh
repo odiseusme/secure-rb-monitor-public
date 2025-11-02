@@ -1270,19 +1270,14 @@ start_monitoring_prompt() {
   
   echo ""
   
-  # Timeout after 30 seconds (auto-skip)
+  # Prompt to start monitoring (no timeout)
   local yn
-  if read -r -t 30 -p "Start monitoring now? [Y/n] (auto-skip in 30s) " yn 2>/dev/null; then
-    yn="${yn:-Y}"
-  else
-    echo ""
-    info "Prompt timed out. Start monitoring manually when ready."
-    return 0
-  fi
+  read -r -p "Start monitoring now? [Y/n]: " yn
+  yn="${yn:-Y}"
   
   if [[ ! "$yn" =~ ^[Yy]$ ]]; then
     echo ""
-    success "Registration complete. Start monitoring when ready:"
+    info "Start monitoring when ready:"
     if [ "$has_compose" = true ]; then
       echo "  ${CYAN}docker compose up -d${NC}"
     elif [ "$has_script" = true ]; then
