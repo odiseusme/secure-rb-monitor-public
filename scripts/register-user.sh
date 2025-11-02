@@ -1174,15 +1174,12 @@ ENV_EOF
     if [[ "$confirm_save" =~ ^[Yy]$ ]]; then
       echo "DASH_PASSPHRASE=$passphrase" >> .env
       chmod 600 .env 2>/dev/null || true
-      success "Passphrase saved with restrictive permissions (600)"
       log_action "Passphrase saved to .env (user confirmed)"
       passphrase_saved=true
     else
-      success "Passphrase not saved - secure choice"
       log_action "Passphrase not saved (user declined)"
     fi
   else
-    success "Passphrase not saved - secure choice"
     log_action "Passphrase not saved (user declined)"
   fi
   
@@ -1237,7 +1234,6 @@ SCRIPT_EOF
   fi
   
   chmod +x "start-monitoring.sh"
-  success "Created start-monitoring.sh"
   log_action "Generated start-monitoring.sh script"
   
   echo "$public_id"  # Return public_id for caller
@@ -1330,12 +1326,13 @@ show_summary() {
   echo "" >&2
   echo "═══════════════════════════════════════════════════════════" >&2
   echo "${GREEN}${BOLD}✓ Registration Complete${NC}" >&2
-  echo "═══════════════════════════════════════════════════════════" >&2
-  echo "${BOLD}Public ID:${NC}     $public_id" >&2
-  echo "${BOLD}Dashboard:${NC}     ${CYAN}$dashboard_url${NC}" >&2
-  echo "${BOLD}Worker URL:${NC}    $BASE_URL" >&2
-  echo "${BOLD}Config File:${NC}   $CONFIG_FILE" >&2
-  echo "═══════════════════════════════════════════════════════════" >&2
+  echo "═══════════════════════════════════════════════════════" >&2
+  echo "" >&2
+  echo "${BOLD}Your Dashboard:${NC}" >&2
+  echo "  ${CYAN}$dashboard_url${NC}" >&2
+  echo "" >&2
+  echo "${BOLD}Public ID:${NC} $public_id" >&2
+  echo "═══════════════════════════════════════════════════════" >&2
   
   log_action "Registration summary displayed"
   
