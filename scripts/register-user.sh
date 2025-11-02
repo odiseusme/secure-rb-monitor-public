@@ -961,10 +961,10 @@ generate_qr_code() {
   if qrencode -o "$output_file" "$final_url" 2>/dev/null; then
     success "QR code saved to: $output_file"
     
-    # Show in terminal if supported
+    # Show in terminal if supported (smaller size for better fit)
     echo ""
     echo "${CYAN}QR Code (scan with mobile device):${NC}"
-    qrencode -t ansiutf8 "$final_url" 2>/dev/null || true
+    qrencode -s 1 -t ansiutf8 "$final_url" 2>/dev/null || true
     echo ""
     
     return 0
