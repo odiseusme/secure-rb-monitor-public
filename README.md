@@ -107,9 +107,17 @@ Simply run the script for a guided, user-friendly experience:
 ```
 
 The interactive menu will guide you through:
-- Entering your invitation code
-- Creating a strong passphrase (or auto-generating one)
-- Starting the monitoring service
+- **Main menu:** Choose Help, Dry Run, Register, or Quit
+- **Invitation code:** Enter your code with retry logic (3 attempts)
+- **Passphrase creation:** Create your own or press Enter to auto-generate
+- **QR code generation:** Optional QR code for easy mobile access
+- **Starting monitoring:** Automatic service start (or use `--no-start` to skip)
+
+**Features:**
+- Detects existing registrations and offers options
+- Auto-generates secure passphrases (24 characters, all character types)
+- Bounded retries (5 attempts for mismatched passphrases, 3 for weak ones)
+- Interactive QR code generation with optional passphrase embedding
 
 **Advanced: Automation Mode (For CI/CD only)**  
 If you need to automate registration in scripts or CI/CD pipelines:
@@ -124,27 +132,83 @@ For local development:
 BASE_URL="http://localhost:38472" ./scripts/register-user.sh --invite INVITE-YOUR-CODE
 ```
 
+**Advanced Options:**
+
+| Flag | Description | Example |
+|------|-------------|---------|
+| `--generated` | Auto-generate secure passphrase (24 chars) | `./scripts/register-user.sh --generated` |
+| `--passphrase-file FILE` | Read passphrase from file (for CI/CD secrets) | `./scripts/register-user.sh --passphrase-file /run/secrets/pass` |
+| `--qr` | Generate QR code for mobile access | `./scripts/register-user.sh --qr` |
+| `--embed-passphrase` | Embed passphrase in QR (requires `--qr`) ⚠️ | `./scripts/register-user.sh --qr --embed-passphrase` |
+| `--no-start` | Skip the "start monitoring" prompt | `./scripts/register-user.sh --no-start` |
+| `--force` | Skip existing registration detection | `./scripts/register-user.sh --force` |
+| `--dry-run` | Validate without registering | `./scripts/register-user.sh --dry-run` |
+| `--help` | Show all options and examples | `./scripts/register-user.sh --help` |
+
+**Common Usage Examples:**
+
+```bash
+# Simple interactive registration
+./scripts/register-user.sh
+
+# Auto-generate passphrase (non-interactive)
+./scripts/register-user.sh --invite YOUR-CODE --generated
+
+# CI/CD with secret file
+./scripts/register-user.sh --invite "$INVITE_CODE" --passphrase-file /run/secrets/passphrase
+
+# Generate QR code for mobile setup
+./scripts/register-user.sh --qr
+
+# Full automation with QR (embedded passphrase)
+./scripts/register-user.sh --invite CODE --generated --qr --embed-passphrase --no-start
+
+# Test configuration without registering
+./scripts/register-user.sh --dry-run
+```
+
 **What happens during registration:**
-1. ✅ Script validates your invitation code with the Worker
-2. ✅ You'll be prompted to choose a passphrase (twice for confirmation)
-3. ✅ Minimum 8 characters enforced for security
-4. ✅ Credentials automatically saved to `.env` file
-5. ✅ Dashboard URL displayed and saved to `.cloudflare-config.json`
-6. ✅ Security warnings shown about keeping `.env` secure
+1. ✅ Script validates your invitation code with the Worker (3 retry attempts)
+2. ✅ You'll be prompted to create or auto-generate a passphrase
+3. ✅ Passphrase validated using `passphrase-guard.js` (≥12 chars OR ≥3 words, 3/4 character types)
+4. ✅ Interactive QR code generation prompt (optional)
+5. ✅ Credentials automatically saved to `.env` file
+6. ✅ Dashboard URL displayed and saved to `.cloudflare-config.json`
+7. ✅ Security warnings shown about keeping `.env` secure
+8. ✅ Option to start monitoring immediately (30-second timeout)
 
 **Step 3: Choose a strong passphrase when prompted**
 ```
-Passphrase (min 8 chars): ••••••••••••••••
+Passphrase (min 12 chars, or press Enter to auto-generate): ••••••••••••••••
 Confirm passphrase: ••••••••••••••••
 ```
 
+**Passphrase Requirements (enforced by `passphrase-guard.js`):**
+- **Option 1:** ≥12 characters + 3 of 4 character types (uppercase, lowercase, digits, symbols)
+- **Option 2:** ≥3 words (space/hyphen-separated) + basic character diversity
+- **Auto-generate:** Press Enter to generate a 24-character secure passphrase
+- **Cannot be:** Common weak passwords from known lists
+
 **Passphrase Guidelines:**
-- **Minimum:** 8 characters (enforced)
+- **Minimum:** 12 characters (enforced)
 - **Recommended:** 20+ characters or 4-6 random words
 - **Examples:** 
-  - `correct-horse-battery-staple-47`
-  - `MyS3cur3Pass!2025#RosenBridge`
+  - `correct-horse-battery-staple-47` (5 words)
+  - `MyS3cur3Pass!2025#RosenBridge` (28 chars, all types)
+  - Auto-generated: `kX9#mP2$vL4@nR8&qT6!wY1%` (24 chars)
 - ⚠️ **Critical:** Save it in a password manager — if lost, data cannot be recovered
+
+**Retry Logic:**
+- Passphrase mismatch: 5 attempts before exit
+- Weak passphrase validation: 3 attempts before exit
+- Invalid invitation code: 3 attempts before exit
+
+**Exit Codes:**
+- `0` - Success (registration completed)
+- `1` - User error (invalid input, cancelled, file permissions)
+- `2` - Validation error (weak passphrase, invalid invitation)
+- `3` - Registration API error (Worker unreachable, server error)
+- `4` - Prerequisites missing (Node.js, helper scripts not found)
 
 **Step 4: Registration complete!**
 ```
@@ -274,7 +338,38 @@ $ ./scripts/monitor_control.sh status
 
 ### Registration with QR Code (Mobile-Friendly)
 
-For easy mobile access with optional auto-login, use the QR registration helper:
+#### Built-in QR Support (register-user.sh v2.1.0+)
+
+**Interactive QR generation** is now built into `register-user.sh`:
+
+```bash
+# After successful registration, you'll be prompted:
+Generate QR code for easy mobile access? [y/N]: y
+Embed passphrase for automatic login? [y/N]: n
+```
+
+Or use flags for automation:
+
+```bash
+# QR without passphrase embedding (secure)
+./scripts/register-user.sh --qr
+
+# QR with passphrase embedding (convenient, less secure)
+./scripts/register-user.sh --qr --embed-passphrase
+```
+
+**Features:**
+- ✅ Automatic after registration (interactive mode)
+- ✅ Generates PNG QR code (`dashboard-USERID.png`)
+- ✅ Shows terminal QR code for immediate scanning
+- ✅ Optional passphrase embedding for auto-login
+- ✅ Security warning shown when embedding passphrase
+
+---
+
+#### Alternative: register-with-qr.sh (Legacy)
+
+For backwards compatibility, the standalone QR registration script is still available:
 
 **Basic registration (passphrase required on login):**
 ```bash
@@ -289,13 +384,6 @@ BASE_URL="https://your-worker.workers.dev" ./scripts/register-with-qr.sh \
   --passphrase "YourStrongPassphrase123"
 ```
 
-**What this does:**
-- ✅ Registers you with the Worker
-- ✅ Saves credentials to `.env` (same as `register-user.sh`)
-- ✅ Generates a PNG QR code (`dashboard-USERID.png`)
-- ✅ Shows terminal QR code for immediate scanning
-- ✅ Optionally embeds passphrase in URL fragment for auto-login
-
 **Options:**
 - `--embed-passphrase` - Include passphrase in URL (convenient but less secure)
 - `--passphrase VALUE` - Specify passphrase (or prompted securely if omitted)
@@ -303,7 +391,9 @@ BASE_URL="https://your-worker.workers.dev" ./scripts/register-with-qr.sh \
 - `--qr-out FILE.png` - Custom output filename
 - `--base-url URL` - Override Worker URL (or use `BASE_URL` env var)
 
-**Security Considerations:**
+---
+
+#### Security Considerations
 
 ⚠️ **Passphrase Embedding:**
 - When using `--embed-passphrase`, the passphrase is placed in the URL fragment (`#p=...`)
