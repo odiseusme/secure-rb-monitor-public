@@ -1319,14 +1319,14 @@ show_summary() {
   dashboard_url="$(jq -er '.dashboardUrl' "$CONFIG_FILE")"
   
   echo "" >&2
-  echo "═══════════════════════════════════════════════════════════" >&2
+  echo "═══════════════════════════════════════════════════════" >&2
   echo "${GREEN}${BOLD}✓ Registration Complete${NC}" >&2
   echo "═══════════════════════════════════════════════════════" >&2
   echo "" >&2
-  echo "${BOLD}Your Dashboard:${NC}" >&2
-  echo "  ${CYAN}$dashboard_url${NC}" >&2
+  echo "${BOLD}Copy this URL into your browser to view your dashboard:${NC}" >&2
   echo "" >&2
-  echo "${BOLD}Public ID:${NC} $public_id" >&2
+  echo "  ${CYAN}${BOLD}$dashboard_url${NC}" >&2
+  echo "" >&2
   echo "═══════════════════════════════════════════════════════" >&2
   
   log_action "Registration summary displayed"
@@ -1500,7 +1500,7 @@ EOF
     [ -z "$QR_OUT_FILE" ] && QR_OUT_FILE="dashboard-${public_id}.png"
     echo ""
     generate_qr_code "$dashboard_url" "$QR_OUT_FILE" "$PASSPHRASE" || true
-  elif is_interactive && [ -z "$INVITE_CODE" ]; then
+  elif is_interactive; then
     # Interactive mode: offer QR code generation
     echo ""
     local gen_qr=""
