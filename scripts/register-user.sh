@@ -1327,15 +1327,15 @@ show_summary() {
   local dashboard_url
   dashboard_url="$(jq -er '.dashboardUrl' "$CONFIG_FILE")"
   
-  echo ""
-  echo "═══════════════════════════════════════════════════════════"
-  echo "${GREEN}${BOLD}✓ Registration Complete${NC}"
-  echo "═══════════════════════════════════════════════════════════"
-  echo "${BOLD}Public ID:${NC}     $public_id"
-  echo "${BOLD}Dashboard:${NC}     ${CYAN}$dashboard_url${NC}"
-  echo "${BOLD}Worker URL:${NC}    $BASE_URL"
-  echo "${BOLD}Config File:${NC}   $CONFIG_FILE"
-  echo "═══════════════════════════════════════════════════════════"
+  echo "" >&2
+  echo "═══════════════════════════════════════════════════════════" >&2
+  echo "${GREEN}${BOLD}✓ Registration Complete${NC}" >&2
+  echo "═══════════════════════════════════════════════════════════" >&2
+  echo "${BOLD}Public ID:${NC}     $public_id" >&2
+  echo "${BOLD}Dashboard:${NC}     ${CYAN}$dashboard_url${NC}" >&2
+  echo "${BOLD}Worker URL:${NC}    $BASE_URL" >&2
+  echo "${BOLD}Config File:${NC}   $CONFIG_FILE" >&2
+  echo "═══════════════════════════════════════════════════════════" >&2
   
   log_action "Registration summary displayed"
   
