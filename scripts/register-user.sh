@@ -1138,7 +1138,7 @@ update_env_file() {
 # Updated on: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # These values are specific to YOUR registration - do not share!
 BASE_URL=$BASE_URL
-WRITE_TOKEN=$WRITE_TOKEN
+WRITE_TOKEN=$write_token
 DASH_SALT_B64=$salt
 ENV_EOF
 
