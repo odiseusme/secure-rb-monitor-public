@@ -28,13 +28,7 @@ fi
 
 # Check if BASE_URL is set
 if [ -z "${BASE_URL:-}" ]; then
-  echo "✗ No BASE_URL found in .env file" >&2
-  echo "" >&2
-  echo "Please copy .env.example to .env first:" >&2
-  echo "  cp .env.example .env" >&2
-  echo "" >&2
-  echo "Then ensure BASE_URL is set in .env" >&2
-  exit 1
+  die "No BASE_URL found. Please copy .env.example to .env and ensure BASE_URL is set."
 fi
 
 CONFIG_FILE="${CONFIG_FILE:-.cloudflare-config.json}"
@@ -645,7 +639,7 @@ ${BOLD}EXIT CODES:${NC}
 
 ${BOLD}SECURITY:${NC}
   - Passphrases validated using passphrase-guard.js policy
-  - Generated passphrases are cryptographically random (12 chars, all types)
+  - Generated passphrases are cryptographically random (24+ chars)
   - Passphrases never logged or echoed (except when generated)
   - QR codes with embedded passphrases should be treated as sensitive
 
@@ -664,48 +658,25 @@ gen_passphrase() {
     die "openssl required for passphrase generation. Install: apt-get install openssl"
   fi
   
-  # Generate 12-character passphrase with all 4 character types distributed throughout
-  # Exclude ambiguous: l, 1, I, O, 0, o for better readability
-  local symbols="!@#$%^&*"
-  local digits="23456789"
-  local uppers="ABCDEFGHJKLMNPQRSTUVWXYZ"
-  local lowers="abcdefghjkmnpqrstuvwxyz"
+  # Generate random bytes and convert to unambiguous base64-like characters
+  # Exclude ambiguous: l, 1, I, O, 0, o
+  # Allowed: A-H, J-N, P-Z (uppercase), a-k, m-n, p-z (lowercase), 2-9 (digits)
+  # That's: 23 uppercase + 24 lowercase + 8 digits = 55 characters
   
-  # Combine all character sets
-  local all_chars="${uppers}${lowers}${digits}${symbols}"
-  
-  # Generate 12 random characters from all sets
+  local unambiguous="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"
   local pass=""
-  for i in {1..12}; do
+  
+  # Generate 20 random characters from unambiguous set
+  for i in {1..20}; do
     local random_byte=$(openssl rand -hex 1)
-    local index=$((0x$random_byte % ${#all_chars}))
-    pass="${pass}${all_chars:$index:1}"
+    local index=$((0x$random_byte % ${#unambiguous}))
+    pass="${pass}${unambiguous:$index:1}"
   done
   
-  # Verify all 4 character types are present (extremely rare to miss, but guarantee it)
-  if [[ ! "$pass" =~ [A-Z] ]] || [[ ! "$pass" =~ [a-z] ]] || [[ ! "$pass" =~ [0-9] ]] || [[ ! "$pass" =~ [!@#\$%\^\&\*] ]]; then
-    # Ensure at least one of each type by replacing first 4 chars
-    local sym_byte=$(openssl rand -hex 1)
-    local sym_idx=$((0x$sym_byte % ${#symbols}))
-    local sym_char="${symbols:$sym_idx:1}"
-    
-    local dig_byte=$(openssl rand -hex 1)
-    local dig_idx=$((0x$dig_byte % ${#digits}))
-    local dig_char="${digits:$dig_idx:1}"
-    
-    local upp_byte=$(openssl rand -hex 1)
-    local upp_idx=$((0x$upp_byte % ${#uppers}))
-    local upp_char="${uppers:$upp_idx:1}"
-    
-    local low_byte=$(openssl rand -hex 1)
-    local low_idx=$((0x$low_byte % ${#lowers}))
-    local low_char="${lowers:$low_idx:1}"
-    
-    # Replace first 4 positions with guaranteed types, keep rest random
-    pass="${sym_char}${dig_char}${upp_char}${low_char}${pass:4}"
-  fi
-  
-  echo "$pass"
+  # Append suffix to guarantee all 4 character classes (using unambiguous chars)
+  # ! = symbol, 7 = digit, A = uppercase, a = lowercase
+  local suffix="!7Aa"
+  echo "${pass}${suffix}"
 }
 
 
@@ -1015,11 +986,15 @@ check_worker_health() {
 
 perform_registration() {
   local passphrase="$1"
-  local max_attempts=3
-  local attempt=1
   
   info "Starting registration..."
   log_action "Beginning registration process"
+  
+  # Get invitation code if not provided
+  if [ -z "$INVITE_CODE" ]; then
+    read -r -p "Invitation code: " INVITE_CODE
+    [ -n "$INVITE_CODE" ] || die "Invitation code required"
+  fi
   
   # Backup existing config if present
   if [ -f "$CONFIG_FILE" ]; then
@@ -1030,89 +1005,32 @@ perform_registration() {
     fi
   fi
   
+  # Create temporary input file
+  local temp_input
+  temp_input=$(mktemp)
+  echo "$INVITE_CODE" > "$temp_input"
+  
   # Check setup-cloudflare.js exists
   [ -f "setup-cloudflare.js" ] || die "setup-cloudflare.js not found in project root"
   
-  # Retry loop for invitation code
-  while [ $attempt -le $max_attempts ]; do
-    # Get invitation code if not provided (or if retry)
-    if [ -z "$INVITE_CODE" ] || [ $attempt -gt 1 ]; then
-      if [ $attempt -eq 1 ]; then
-        read -r -p "Invitation code: " INVITE_CODE
-      else
-        echo ""
-        warn "Attempt $attempt of $max_attempts"
-        read -r -p "Enter invitation code (or press Ctrl+C to cancel): " INVITE_CODE
-      fi
-      [ -n "$INVITE_CODE" ] || die "Invitation code required"
-    fi
-    
-    if [ $attempt -gt 1 ]; then
-      info "Trying registration with new code..."
-    fi
-    
-    # Create temporary input file
-    local temp_input
-    temp_input=$(mktemp)
-    echo "$INVITE_CODE" > "$temp_input"
-    
-    # Run registration with input redirection
-    export DASH_PASSPHRASE="$passphrase"
-    local registration_output
-    local exit_code
-    
-    # Temporarily disable exit-on-error to capture output even on failure
-    set +e
-    registration_output=$(BASE_URL="$BASE_URL" node setup-cloudflare.js < "$temp_input" 2>&1)
-    exit_code=$?
-    set -e
-    
-    # Clean up
+  # Run registration with input redirection
+  export DASH_PASSPHRASE="$passphrase"
+  if BASE_URL="$BASE_URL" node setup-cloudflare.js < "$temp_input" 2>&1 | grep -v "^Cloudflare Registration\|^Registering with Cloudflare\|^Updating .env\|^Updated .env\|^Passphrase Configuration\|^You need a passphrase\|^This should be strong\|^Keep your .env\|^Found existing .env"; then
     rm -f "$temp_input"
+    unset DASH_PASSPHRASE
     
-    # Check if registration succeeded
-    if [ $exit_code -eq 0 ] && [ -f "$CONFIG_FILE" ]; then
-      unset DASH_PASSPHRASE
-      success "Registration successful"
-      log_action "Registration completed successfully"
-      return 0
-    fi
-    
-    # Registration failed - show filtered output
-    echo "$registration_output" | grep -v "^Cloudflare Registration\|^Registering with Cloudflare\|^Updating .env\|^Updated .env\|^Passphrase Configuration\|^You need a passphrase\|^This should be strong\|^Keep your .env\|^Found existing .env"
-    
-    
-    # Check if this is an invite-related error (can retry)
-    if echo "$registration_output" | grep -q "HTTP 400\|HTTP 409\|Invalid invitation\|already used"; then
-      if [ $attempt -lt $max_attempts ]; then
-        echo "" >&2
-        warn "Registration failed due to invalid or used invitation code."
-        # Clear INVITE_CODE to prompt for new one
-        INVITE_CODE=""
-        attempt=$((attempt + 1))
-        continue
-      else
-        # Max attempts reached
-        echo "" >&2
-        echo "${RED}✗${NC} All $max_attempts registration attempts failed." >&2
-        echo "" >&2
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
-        echo "  Please contact your administrator to request a fresh" >&2
-        echo "  invitation code. Invitation codes can only be used once." >&2
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
-        echo "" >&2
-        unset DASH_PASSPHRASE
-        exit 3
-      fi
-    else
-      # Non-invite error (worker down, network issue, etc.) - don't retry
-      echo "" >&2
-      unset DASH_PASSPHRASE
-      die "Registration failed. Check the error message above for details."
-    fi
-  done
+    [ -f "$CONFIG_FILE" ] || die "Registration failed - config not created"
+    success "Registration successful"
+    log_action "Registration completed successfully"
+    return 0
+  else
+    local exit_code=$?
+    rm -f "$temp_input"
+    unset DASH_PASSPHRASE
+    echo "" >&2
+    die "Registration failed. Check the error message above for details."
+  fi
 }
-
 
 update_env_file() {
   local passphrase="$1"
@@ -1139,7 +1057,7 @@ update_env_file() {
 # These values are specific to YOUR registration - do not share!
 BASE_URL=$BASE_URL
 WRITE_TOKEN=$WRITE_TOKEN
-DASH_SALT_B64=$salt
+DASH_SALT_B64=$SALT
 ENV_EOF
 
   # Passphrase storage prompt
@@ -1503,42 +1421,11 @@ EOF
   local dashboard_url
   dashboard_url="$(show_summary "$public_id")"
   
-  # Generate QR code if requested or prompt in interactive mode
+  # Generate QR code if requested
   if [ "$GENERATE_QR" -eq 1 ]; then
     [ -z "$QR_OUT_FILE" ] && QR_OUT_FILE="dashboard-${public_id}.png"
     echo ""
     generate_qr_code "$dashboard_url" "$QR_OUT_FILE" "$PASSPHRASE" || true
-  elif is_interactive && [ -z "$INVITE_CODE" ]; then
-    # Interactive mode: offer QR code generation
-    echo ""
-    local gen_qr=""
-    while [[ ! "$gen_qr" =~ ^[YyNn]$ ]]; do
-      read -p "Generate QR code for easy mobile access? [y/N]: " gen_qr
-      gen_qr=${gen_qr:-n}
-    done
-    
-    if [[ "$gen_qr" =~ ^[Yy]$ ]]; then
-      QR_OUT_FILE="dashboard-${public_id}.png"
-      
-      # Ask about passphrase embedding
-      echo ""
-      echo "${YELLOW}⚠  Security Notice:${NC} Embedding passphrase in QR makes auto-login possible"
-      echo "   but anyone with the QR code can access your dashboard."
-      echo ""
-      
-      local embed_qr=""
-      while [[ ! "$embed_qr" =~ ^[YyNn]$ ]]; do
-        read -p "Embed passphrase for auto-login? [y/N]: " embed_qr
-        embed_qr=${embed_qr:-n}
-      done
-      
-      if [[ "$embed_qr" =~ ^[Yy]$ ]]; then
-        EMBED_PASSPHRASE_QR=1
-      fi
-      
-      echo ""
-      generate_qr_code "$dashboard_url" "$QR_OUT_FILE" "$PASSPHRASE" || true
-    fi
   fi
   
   # Prompt to start monitoring

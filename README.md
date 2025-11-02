@@ -115,7 +115,7 @@ The interactive menu will guide you through:
 
 **Features:**
 - Detects existing registrations and offers options
-- Auto-generates secure passphrases (24 characters, all character types)
+- Auto-generates secure passphrases (12 characters, all character types)
 - Bounded retries (5 attempts for mismatched passphrases, 3 for weak ones)
 - Interactive QR code generation with optional passphrase embedding
 
@@ -136,7 +136,7 @@ BASE_URL="http://localhost:38472" ./scripts/register-user.sh --invite INVITE-YOU
 
 | Flag | Description | Example |
 |------|-------------|---------|
-| `--generated` | Auto-generate secure passphrase (24 chars) | `./scripts/register-user.sh --generated` |
+| `--generated` | Auto-generate secure passphrase (12 chars) | `./scripts/register-user.sh --generated` |
 | `--passphrase-file FILE` | Read passphrase from file (for CI/CD secrets) | `./scripts/register-user.sh --passphrase-file /run/secrets/pass` |
 | `--qr` | Generate QR code for mobile access | `./scripts/register-user.sh --qr` |
 | `--embed-passphrase` | Embed passphrase in QR (requires `--qr`) ⚠️ | `./scripts/register-user.sh --qr --embed-passphrase` |
@@ -186,7 +186,7 @@ Confirm passphrase: ••••••••••••••••
 **Passphrase Requirements (enforced by `passphrase-guard.js`):**
 - **Option 1:** ≥12 characters + 3 of 4 character types (uppercase, lowercase, digits, symbols)
 - **Option 2:** ≥3 words (space/hyphen-separated) + basic character diversity
-- **Auto-generate:** Press Enter to generate a 24-character secure passphrase
+- **Auto-generate:** Press Enter to generate a 12-character secure passphrase
 - **Cannot be:** Common weak passwords from known lists
 
 **Passphrase Guidelines:**
@@ -195,7 +195,7 @@ Confirm passphrase: ••••••••••••••••
 - **Examples:** 
   - `correct-horse-battery-staple-47` (5 words)
   - `MyS3cur3Pass!2025#RosenBridge` (28 chars, all types)
-  - Auto-generated: `kX9#mP2$vL4@nR8&qT6!wY1%` (24 chars)
+  - Auto-generated: `a2F#x8Kp!3Ym` (12 chars, all types)
 - ⚠️ **Critical:** Save it in a password manager — if lost, data cannot be recovered
 
 **Retry Logic:**
