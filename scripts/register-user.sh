@@ -933,9 +933,26 @@ generate_qr_code() {
   local output_file="$2"
   local passphrase="$3"
   
-  if ! command -v qrencode >/dev/null 2>&1; then
-    warn "qrencode not installed - skipping QR code generation"
-    echo "  Install: sudo apt-get install -y qrencode"
+  # Find the compact QR generator script
+  local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local qr_generator="$script_dir/generate-compact-qr.py"
+  
+  # Check if Python 3 and qrcode library are available
+  if ! command -v python3 >/dev/null 2>&1; then
+    warn "python3 not installed - skipping QR code generation"
+    echo "  Install: sudo apt-get install -y python3" >&2
+    return 1
+  fi
+  
+  if ! python3 -c "import qrcode" 2>/dev/null; then
+    warn "python3-qrcode library not installed - skipping QR code generation" >&2
+    echo "  Install: sudo apt-get install -y python3-qrcode" >&2
+    echo "       or: pip3 install --user qrcode" >&2
+    return 1
+  fi
+  
+  if [ ! -f "$qr_generator" ]; then
+    warn "QR generator script not found: $qr_generator" >&2
     return 1
   fi
   
@@ -944,8 +961,8 @@ generate_qr_code() {
   # Embed passphrase if requested
   if [ "$EMBED_PASSPHRASE_QR" -eq 1 ]; then
     if ! command -v jq >/dev/null 2>&1; then
-      warn "jq not installed - cannot embed passphrase in URL"
-      echo "  Install: sudo apt-get install -y jq"
+      warn "jq not installed - cannot embed passphrase in URL" >&2
+      echo "  Install: sudo apt-get install -y jq" >&2
       return 1
     fi
     
@@ -953,31 +970,22 @@ generate_qr_code() {
     local encoded_pass="$(printf '%s' "$passphrase" | jq -sRr @uri)"
     final_url="${url}#${QR_FRAGMENT_KEY}=${encoded_pass}"
     
-    warn "Passphrase embedded in QR code URL fragment"
-    echo "  ${YELLOW}This QR code contains your passphrase - treat as sensitive!${NC}"
+    warn "Passphrase embedded in QR code URL fragment" >&2
+    echo "  ${YELLOW}This QR code contains your passphrase - treat as sensitive!${NC}" >&2
   fi
   
-  # Generate QR code
-  if qrencode -o "$output_file" "$final_url" 2>/dev/null; then
-    success "QR code saved to: $output_file"
-    
-    # Show in terminal if supported (minimal margin for compact size)
-    echo ""
-    echo "${CYAN}QR Code (scan with mobile device):${NC}"
-    echo ""
-    if qrencode -m 0 -t ANSIUTF8 "$final_url" 2>/dev/null; then
-      echo ""
-      echo "${YELLOW}Tip: If QR code doesn't fit on screen, open the saved file:${NC}"
-      echo "  ${BOLD}$output_file${NC}"
-    else
-      echo "${YELLOW}Terminal display not available. Open the saved file:${NC}"
-      echo "  ${BOLD}$output_file${NC}"
-    fi
-    echo ""
-    
+  # Generate QR code with compact Python generator
+  echo "" >&2
+  echo "${CYAN}QR Code (scan with mobile device):${NC}" >&2
+  echo "" >&2
+  
+  if SHOW_TERMINAL=1 python3 "$qr_generator" "$final_url" "$output_file" 2>&1; then
+    echo "" >&2
+    success "QR code saved to: $output_file" >&2
+    echo "" >&2
     return 0
   else
-    warn "Failed to generate QR code"
+    warn "Failed to generate QR code" >&2
     return 1
   fi
 }
