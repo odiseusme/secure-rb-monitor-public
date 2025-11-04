@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # register-user.sh — User registration with interactive menu and security upgrades
-# Version: 2.1.0
-# Date: 2025-11-01
+# Version: 1.2.0
+# Date: 2025-11-04
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -496,6 +496,31 @@ run_dry_run() {
   done
   echo ""
   
+  # Check Python (optional, for QR code generation)
+  echo "${BOLD}Checking optional dependencies...${NC}"
+  if command -v python3 >/dev/null 2>&1; then
+    success "python3: installed"
+    # Check for qrcode library
+    if python3 -c "import qrcode" 2>/dev/null; then
+      success "python3-qrcode: installed"
+      info "QR code generation: available"
+    else
+      warn "python3-qrcode: NOT FOUND"
+      echo "  ${YELLOW}QR code generation will be unavailable${NC}"
+      echo "  Install: ${CYAN}sudo apt-get install -y python3-qrcode${NC}"
+      echo "       or: ${CYAN}pip3 install --user qrcode${NC}"
+      echo ""
+      echo "  ${YELLOW}If you want QR code generation, quit now and install before re-running.${NC}"
+    fi
+  else
+    warn "python3: NOT FOUND"
+    echo "  ${YELLOW}QR code generation will be unavailable${NC}"
+    echo "  Install: ${CYAN}sudo apt-get install -y python3 python3-qrcode${NC}"
+    echo ""
+    echo "  ${YELLOW}If you want QR code generation, quit now and install before re-running.${NC}"
+  fi
+  echo ""
+  
   # Check Node.js version
   if command -v node >/dev/null 2>&1; then
     local node_version=$(node --version 2>/dev/null | sed 's/v//')
@@ -814,14 +839,14 @@ get_passphrase() {
       die "Passphrase from file failed validation"
     fi
     
-    echo "$pass"
+    _PASSPHRASE_RESULT="$pass"
     return 0
   fi
   
   # Non-interactive: --generated
   if [ "${FORCE_GENERATED}" -eq 1 ]; then
     pass="$(gen_passphrase)"
-    echo "$pass"
+    _PASSPHRASE_RESULT="$pass"
     return 0
   fi
   
@@ -858,11 +883,53 @@ get_passphrase() {
       echo "" >&2
       echo "═══════════════════════════════════════════════════════════" >&2
       echo "${YELLOW}This passphrase will only be shown ONCE.${NC}" >&2
+      echo "" >&2
       echo "Write it down or save it in a password manager now!" >&2
       echo "" >&2
-      read -p "Press Enter after you've saved the passphrase..."
+      
+      # Passphrase storage prompt - use GLOBAL variable so update_env_file can access it
+      echo "═══════════════════════════════════════════════════════════" >&2
+      echo "${YELLOW}⚠  SECURITY NOTICE: Passphrase Storage${NC}" >&2
+      echo "═══════════════════════════════════════════════════════════" >&2
+      echo "The passphrase encrypts your monitoring data and to see it remotely" >&2
+      echo "you would need to enter this password both in your .env file and" >&2
+      echo "in your remote browser." >&2
       echo "" >&2
-      echo "$pass"
+      echo "${GREEN}Recommended:${NC} Enter it manually each time for maximum security." >&2
+      echo "" >&2
+      
+      # Store in GLOBAL variable (not local) so update_env_file can use it
+      # Don't reset if already set - just prompt if empty
+      if [ -z "$SAVE_PASSPHRASE_DECISION" ]; then
+        while [[ ! "$SAVE_PASSPHRASE_DECISION" =~ ^[YyNn]$ ]]; do
+          read -p "Save passphrase to .env file? [y/N]: " SAVE_PASSPHRASE_DECISION >&2
+          SAVE_PASSPHRASE_DECISION=${SAVE_PASSPHRASE_DECISION:-n}
+        done
+        
+        # If user chose to save, confirm immediately
+        if [[ "$SAVE_PASSPHRASE_DECISION" =~ ^[Yy]$ ]]; then
+          echo "" >&2
+          echo "${RED}⚠  WARNING: Passphrase will be stored in PLAINTEXT in .env${NC}" >&2
+          echo "${RED}⚠  Anyone with access to this file can decrypt your data.${NC}" >&2
+          echo "" >&2
+          
+          SAVE_PASSPHRASE_CONFIRMED=""
+          while [[ ! "$SAVE_PASSPHRASE_CONFIRMED" =~ ^[YyNn]$ ]]; do
+            read -p "Are you absolutely sure? [y/N]: " SAVE_PASSPHRASE_CONFIRMED >&2
+            SAVE_PASSPHRASE_CONFIRMED=${SAVE_PASSPHRASE_CONFIRMED:-n}
+          done
+          
+          # If they changed their mind, update the decision
+          if [[ ! "$SAVE_PASSPHRASE_CONFIRMED" =~ ^[Yy]$ ]]; then
+            SAVE_PASSPHRASE_DECISION="n"
+          fi
+        fi
+      fi
+      
+      echo "" >&2
+      read -p "Press Enter after you've saved the passphrase..." >&2
+      echo "" >&2
+      _PASSPHRASE_RESULT="$pass"
       return 0
     fi
     
@@ -876,7 +943,7 @@ get_passphrase() {
         
         if [ "$pass" = "$confirm" ]; then
           success "Passphrase confirmed"
-          echo "$pass"
+          _PASSPHRASE_RESULT="$pass"
           return 0
         fi
         
@@ -931,7 +998,7 @@ get_passphrase() {
     echo "" >&2
     read -p "Press Enter after you've saved the passphrase..."
     echo "" >&2
-    echo "$pass"
+    _PASSPHRASE_RESULT="$pass"
     return 0
   else
     die "Registration cancelled. Please start over when ready."
@@ -1103,7 +1170,10 @@ perform_registration() {
     # Check if registration succeeded
     if [ $exit_code -eq 0 ] && [ -f "$CONFIG_FILE" ]; then
       unset DASH_PASSPHRASE
-      success "Registration successful"
+      echo "" >&2
+      echo "═══════════════════════════════════════════════════════════" >&2
+      echo "${GREEN}${BOLD}✓ Registration Completed Successfully${NC}" >&2
+      echo "═══════════════════════════════════════════════════════════" >&2
       log_action "Registration completed successfully"
       return 0
     fi
@@ -1171,43 +1241,36 @@ WRITE_TOKEN=$write_token
 DASH_SALT_B64=$salt
 ENV_EOF
 
-  # Passphrase storage prompt
-  echo "" >&2
-  echo "${YELLOW}═══════════════════════════════════════════════════════════${NC}" >&2
-  echo "${YELLOW}⚠  SECURITY NOTICE: Passphrase Storage${NC}" >&2
-  echo "${YELLOW}═══════════════════════════════════════════════════════════${NC}" >&2
-  echo "The passphrase encrypts your monitoring data." >&2
-  echo "${GREEN}Recommended:${NC} Enter it manually each time for maximum security." >&2
-  echo "" >&2
+  # Use the passphrase storage decision made earlier (or prompt if not set)
+  local save_pass="${SAVE_PASSPHRASE_DECISION:-}"
   
-  local save_pass=""
-  while [[ ! "$save_pass" =~ ^[YyNn]$ ]]; do
-    read -p "Save passphrase to .env file? [y/N]: " save_pass >&2
-    save_pass=${save_pass:-n}
-  done
+  # Only prompt if decision wasn't already made during passphrase generation
+  if [ -z "$save_pass" ]; then
+    echo "" >&2
+    echo "${YELLOW}═══════════════════════════════════════════════════════════${NC}" >&2
+    echo "${YELLOW}⚠  SECURITY NOTICE: Passphrase Storage${NC}" >&2
+    echo "${YELLOW}═══════════════════════════════════════════════════════════${NC}" >&2
+    echo "The passphrase encrypts your monitoring data and to see it remotely" >&2
+    echo "you would need to enter this password both in your .env file and" >&2
+    echo "in your remote browser." >&2
+    echo "" >&2
+    echo "${GREEN}Recommended:${NC} Enter it manually each time for maximum security." >&2
+    echo "" >&2
+    
+    while [[ ! "$save_pass" =~ ^[YyNn]$ ]]; do
+      read -p "Save passphrase to .env file? [y/N]: " save_pass >&2
+      save_pass=${save_pass:-n}
+    done
+  fi
   
   local passphrase_saved=false
   
+  # If user confirmed saving (decision already made with confirmation in get_passphrase)
   if [[ "$save_pass" =~ ^[Yy]$ ]]; then
-    echo "" >&2
-    echo "${RED}⚠  WARNING: Passphrase will be stored in PLAINTEXT in .env${NC}" >&2
-    echo "${RED}⚠  Anyone with access to this file can decrypt your data.${NC}" >&2
-    echo "" >&2
-    
-    local confirm_save=""
-    while [[ ! "$confirm_save" =~ ^[YyNn]$ ]]; do
-      read -p "Are you absolutely sure? [y/N]: " confirm_save >&2
-      confirm_save=${confirm_save:-n}
-    done
-    
-    if [[ "$confirm_save" =~ ^[Yy]$ ]]; then
-      printf 'DASH_PASSPHRASE="%s"\n' "$passphrase" >> .env
-      chmod 600 .env 2>/dev/null || true
-      log_action "Passphrase saved to .env (user confirmed)"
-      passphrase_saved=true
-    else
-      log_action "Passphrase not saved (user declined)"
-    fi
+    printf 'DASH_PASSPHRASE="%s"\n' "$passphrase" >> .env
+    chmod 600 .env 2>/dev/null || true
+    log_action "Passphrase saved to .env (user confirmed)"
+    passphrase_saved=true
   else
     log_action "Passphrase not saved (user declined)"
   fi
@@ -1270,6 +1333,8 @@ SCRIPT_EOF
 
 # Start monitoring prompt with timeout (per review - recommendation #2)
 start_monitoring_prompt() {
+  local dashboard_url="$1"
+  
   # Skip if --no-start flag provided
   if [ "$NO_START" -eq 1 ]; then
     echo ""
@@ -1397,22 +1462,29 @@ start_monitoring_prompt() {
       
       # Start uploader/sync
       if [ "$has_script" = true ]; then
-        info "Starting cloud sync uploader..."
-        
-        # Start in background with nohup to survive terminal close
-        if nohup ./start-monitoring.sh start >/dev/null 2>&1 &
-        then
-          local uploader_pid=$!
-          sleep 2  # Give it a moment to start
-          
-          if kill -0 "$uploader_pid" 2>/dev/null; then
-            success "Cloud sync uploader started (PID: $uploader_pid)"
-            uploader_started=true
-          else
-            warn "Uploader failed to start"
-          fi
+        # Check if uploader is already running
+        if pgrep -f "node cloudflare-sync.js" >/dev/null 2>&1; then
+          local existing_pid=$(pgrep -f "node cloudflare-sync.js")
+          success "Cloud sync uploader already running (PID: $existing_pid)"
+          uploader_started=true
         else
-          warn "Failed to start cloud sync uploader"
+          info "Starting cloud sync uploader..."
+          
+          # Start in background with nohup to survive terminal close
+          if nohup ./start-monitoring.sh start >/dev/null 2>&1 &
+          then
+            local uploader_pid=$!
+            sleep 2  # Give it a moment to start
+            
+            if kill -0 "$uploader_pid" 2>/dev/null; then
+              success "Cloud sync uploader started (PID: $uploader_pid)"
+              uploader_started=true
+            else
+              warn "Uploader failed to start"
+            fi
+          else
+            warn "Failed to start cloud sync uploader"
+          fi
         fi
       else
         warn "start-monitoring.sh not found - skipping cloud sync"
@@ -1425,7 +1497,7 @@ start_monitoring_prompt() {
         success "Full monitoring system running!"
         echo ""
         echo "  Local monitor: ${CYAN}http://localhost:8080${NC}"
-        echo "  Remote dashboard: ${CYAN}${DASHBOARD_URL:-Check .env for URL}${NC}"
+        echo "  Remote dashboard: ${CYAN}${dashboard_url}${NC}"
         echo ""
         echo "  View logs: ${CYAN}docker compose logs -f${NC}"
         echo "  Stop all: ${CYAN}docker compose down && pkill -f cloudflare-sync${NC}"
@@ -1433,6 +1505,7 @@ start_monitoring_prompt() {
         success "Local monitor running (cloud sync failed)"
         echo ""
         echo "  Monitor: ${CYAN}http://localhost:8080${NC}"
+        echo "  Dashboard: ${CYAN}${dashboard_url}${NC}"
         echo "  Retry cloud sync: ${CYAN}./start-monitoring.sh start${NC}"
       elif [ "$uploader_started" = true ]; then
         success "Cloud sync running (local monitor failed)"
@@ -1472,8 +1545,6 @@ show_summary() {
   dashboard_url="$(jq -er '.dashboardUrl' "$CONFIG_FILE")"
   
   echo "" >&2
-  echo "═══════════════════════════════════════════════════════" >&2
-  echo "${GREEN}${BOLD}✓ Registration Complete${NC}" >&2
   echo "═══════════════════════════════════════════════════════" >&2
   echo "" >&2
   echo "${BOLD}Copy this URL into your browser to view your dashboard:${NC}" >&2
@@ -1560,6 +1631,9 @@ main() {
   setup_colors
   parse_args "$@"
   
+  # Initialize global variable for passphrase storage decision
+  SAVE_PASSPHRASE_DECISION=""
+  
   log_action "Script started (version $VERSION)"
   
   # Handle dry run
@@ -1635,7 +1709,9 @@ EOF
   check_worker_health
   
   # Get and validate passphrase
-  PASSPHRASE="$(get_passphrase)"
+  # Note: get_passphrase sets SAVE_PASSPHRASE_DECISION as side effect
+  get_passphrase
+  PASSPHRASE="$_PASSPHRASE_RESULT"
   
   # Perform registration
   perform_registration "$PASSPHRASE"
@@ -1670,7 +1746,7 @@ EOF
   fi
   
   # Prompt to start monitoring
-  start_monitoring_prompt
+  start_monitoring_prompt "$dashboard_url"
   
   echo ""
   success "All done! 🚀"
