@@ -1284,6 +1284,38 @@ start_monitoring_prompt() {
   [ -x "./start-monitoring.sh" ] && has_script=true
   
   echo ""
+  
+  # First prompt: Start now or quit?
+  local start_choice=""
+  while [[ ! "$start_choice" =~ ^[SsQq]$ ]]; do
+    read -r -p "Would you like to [S]tart monitoring now, or [Q]uit? " start_choice
+    start_choice="${start_choice:-Q}"
+  done
+  
+  # If quit, show manual instructions and exit
+  if [[ "$start_choice" =~ ^[Qq]$ ]]; then
+    echo ""
+    info "Start monitoring when ready:"
+    echo ""
+    if [ "$has_compose" = true ]; then
+      echo "  ${BOLD}Local only:${NC}"
+      echo "    ${CYAN}docker compose up -d${NC}"
+      echo ""
+    fi
+    if [ "$has_script" = true ]; then
+      echo "  ${BOLD}Cloud sync only:${NC}"
+      echo "    ${CYAN}./start-monitoring.sh start${NC}"
+      echo ""
+    fi
+    if [ "$has_compose" = true ] && [ "$has_script" = true ]; then
+      echo "  ${BOLD}Both (recommended):${NC}"
+      echo "    ${CYAN}docker compose up -d && ./start-monitoring.sh start${NC}"
+    fi
+    return 0
+  fi
+  
+  # Second prompt: How to monitor?
+  echo ""
   echo "═══════════════════════════════════════════════════════════"
   echo "${BOLD}How would you like to monitor?${NC}"
   echo "═══════════════════════════════════════════════════════════"
@@ -1294,14 +1326,14 @@ start_monitoring_prompt() {
   echo "  ${BOLD}[C]${NC} Cloud sync - Update remote dashboard + local monitor"
   echo "      (Recommended: Full monitoring with remote access)"
   echo ""
-  echo "  ${BOLD}[S]${NC} Skip - I'll start monitoring manually later"
+  echo "  ${BOLD}[Q]${NC} Quit - I'll start monitoring manually later"
   echo ""
   
   # Get user choice
   local choice=""
-  while [[ ! "$choice" =~ ^[LlCcSs]$ ]]; do
-    read -r -p "Your choice [L/C/S]: " choice
-    choice="${choice:-S}"
+  while [[ ! "$choice" =~ ^[LlCcQq]$ ]]; do
+    read -r -p "Your choice [L/C/Q]: " choice
+    choice="${choice:-Q}"
   done
   
   echo ""
@@ -1397,8 +1429,8 @@ start_monitoring_prompt() {
       fi
       ;;
       
-    s)
-      # Skip - show instructions
+    q)
+      # Quit - show instructions
       info "Start monitoring when ready:"
       echo ""
       if [ "$has_compose" = true ]; then
