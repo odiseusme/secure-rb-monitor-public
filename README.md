@@ -24,7 +24,7 @@ Zero-knowledge, end-to-end encrypted monitoring for Rosen Bridge watchers. Monit
 - 📱 **Mobile-responsive** – monitor from phone, tablet, or desktop
 - ⚡ **Automatic discovery** – detects watchers and configures networks
 
-> **Status:** v1.0 – Production ready with security-hardened architecture  
+> **Status:** v1.2.1 – Production ready with security-hardened architecture  
 > See [`CHANGELOG.md`](./CHANGELOG.md) for version history and upgrade notes.
 
 ---
@@ -338,7 +338,7 @@ $ ./scripts/monitor_control.sh status
 
 ### Registration with QR Code (Mobile-Friendly)
 
-#### Built-in QR Support (register-user.sh v2.1.0+)
+#### Built-in QR Support (register-user.sh v1.2.1+)
 
 **Interactive QR generation** is now built into `register-user.sh`:
 
