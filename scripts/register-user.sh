@@ -26,14 +26,29 @@ if [ -f ".env" ]; then
   set +a
 fi
 
-# Check if BASE_URL is set
+# Check if BASE_URL is set, if not try to restore from .env.example
 if [ -z "${BASE_URL:-}" ]; then
-  echo "✗ No BASE_URL found in .env file" >&2
-  echo "" >&2
-  echo "Please ensure .env.example exists, then either:" >&2
-  echo "  1. Run: ./scripts/prepare_build.sh (recommended - sets up everything)" >&2
-  echo "  2. Or manually set BASE_URL in .env" >&2
-  exit 1
+  if [ -f ".env.example" ]; then
+    # Extract BASE_URL from .env.example and append to .env
+    if grep -q "^BASE_URL=" .env.example; then
+      echo "ℹ BASE_URL missing - restoring from .env.example..." >&2
+      grep "^BASE_URL=" .env.example >> .env
+      # Re-source .env to get the restored BASE_URL
+      set -a
+      source .env 2>/dev/null || true
+      set +a
+    fi
+  fi
+  
+  # Check again after attempting restore
+  if [ -z "${BASE_URL:-}" ]; then
+    echo "✗ No BASE_URL found in .env file" >&2
+    echo "" >&2
+    echo "Please ensure .env.example exists, then either:" >&2
+    echo "  1. Run: ./scripts/prepare_build.sh (recommended - sets up everything)" >&2
+    echo "  2. Or manually set BASE_URL in .env" >&2
+    exit 1
+  fi
 fi
 
 CONFIG_FILE="${CONFIG_FILE:-.cloudflare-config.json}"
