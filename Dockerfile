@@ -27,6 +27,7 @@ RUN npm ci --only=production && npm cache clean --force
 # App files
 COPY write_status.js static-server.js status-updater.js ./
 COPY config.json ./
+COPY lib/ ./lib/
 COPY public/ ./public/
 COPY config.json.example ./config/config.json
 
