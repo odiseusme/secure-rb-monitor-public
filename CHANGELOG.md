@@ -1,3 +1,55 @@
+## [2.2.0] - 2025-11-04
+
+### Added
+- **Compact QR Code Generation**: New Python-based QR generator creates terminal-friendly codes
+  - 50% smaller display size vs qrencode (fits on any terminal)
+  - Uses `python3-qrcode` library with optimized settings
+  - ASCII art rendering for maximum compatibility
+  - Auto-detects QR code version based on URL length
+  - New script: `scripts/generate-compact-qr.py`
+
+- **Two-Step Monitoring Prompt**: Clearer post-registration workflow
+  - Step 1: "Would you like to [S]tart monitoring now, or [Q]uit?"
+  - Step 2 (if Start): Choose monitoring mode
+    - [L] Local only - Docker container for localhost:8080
+    - [C] Cloud sync - Both local monitor AND remote dashboard updates
+    - [Q] Quit - Show manual start instructions
+  - Eliminates confusion about what "start monitoring" means
+  - Users now understand difference between local vs cloud sync
+
+- **Auto-Restore BASE_URL**: Self-healing .env management
+  - Automatically restores BASE_URL from .env.example if missing
+  - Fixes recurring "No BASE_URL found" error after registration
+  - Informative message when auto-restore happens
+  - No manual intervention needed for multiple registrations
+
+### Fixed
+- **Passphrase Special Characters**: Shell metacharacters in passphrases now handled correctly
+  - Passphrases with `&`, `|`, `;`, `$`, etc. now properly quoted in .env
+  - Prevents "command not found" errors when uploader sources .env
+  - Changed from `DASH_PASSPHRASE=value` to `DASH_PASSPHRASE="value"`
+
+- **BASE_URL Error Message**: Improved guidance when BASE_URL missing
+  - Directs users to `prepare_build.sh` instead of destructive `cp .env.example .env`
+  - Prevents accidental overwrite of DOCKER_GID and other configured values
+
+### Changed
+- **Dependencies**: Switched from `qrencode` to `python3-qrcode`
+  - Install: `sudo apt-get install python3-qrcode` or `pip3 install qrcode`
+  - Enables terminal display scaling (not possible with qrencode)
+
+- **Version**: Bumped to 2.2.0
+  - Minor version bump for new features
+  - Fully backward compatible
+  - No migration required
+
+### Technical Details
+- QR code settings: `version=1`, `error_correction=L`, `box_size=3`, `border=2`
+- Cloud sync mode uses `nohup` for background operation with 2s startup verification
+- Comprehensive status reporting for Docker + uploader in combined mode
+- All interactive prompts validated with proper fallback values
+
+
 # Changelog
 
 All notable changes to RBMonitor will be documented in this file.
