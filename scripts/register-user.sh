@@ -1201,7 +1201,7 @@ ENV_EOF
     done
     
     if [[ "$confirm_save" =~ ^[Yy]$ ]]; then
-      printf 'DASH_PASSPHRASE=%s\n' "$passphrase" >> .env
+      printf 'DASH_PASSPHRASE="%s"\n' "$passphrase" >> .env
       chmod 600 .env 2>/dev/null || true
       log_action "Passphrase saved to .env (user confirmed)"
       passphrase_saved=true
