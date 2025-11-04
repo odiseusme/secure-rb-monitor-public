@@ -1,61 +1,76 @@
 #!/usr/bin/env python3
-"""
-Compact QR Code Generator for register-user.sh
-Generates small, terminal-friendly QR codes using python-qrcode library.
-"""
-
-import os
 import sys
-import qrcode
+import os
 
-def generate_compact_qr(url, output_file=None, show_terminal=False):
-    """
-    Generate a compact QR code optimized for terminal display.
+try:
+    import qrcode
+except ImportError:
+    print("ERROR: qrcode module not found!", file=sys.stderr)
+    sys.exit(1)
+
+def generate_compact_qr(url, output_file):
+    # Adjust box_size based on URL length for optimal size
+    if len(url) > 300:
+        BOX_SIZE = 5  # Very long URLs (with passphrase)
+    elif len(url) > 150:
+        BOX_SIZE = 7  # Medium URLs
+    else:
+        BOX_SIZE = 10  # Short URLs
     
-    Args:
-        url: The URL to encode
-        output_file: Optional path to save PNG file
-        show_terminal: If True, print QR to terminal
-    """
-    # Create QR code with compact settings
+    BORDER = 1
+    
     qr = qrcode.QRCode(
-        version=1,                                      # Start small, auto-increases if needed
-        error_correction=qrcode.constants.ERROR_CORRECT_L,  # Lowest = smallest QR code
-        box_size=3,                                     # Smaller pixels for PNG
-        border=2,                                       # Minimal border (2 is QR spec minimum)
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=BOX_SIZE,
+        border=BORDER,
     )
     
     qr.add_data(url)
     qr.make(fit=True)
     
-    # Save PNG file if requested
-    if output_file:
-        img = qr.make_image(fill_color="black", back_color="white")
-        img.save(output_file)
-        print(f"QR code saved to: {output_file}", file=sys.stderr)
+    img = qr.make_image(fill_color="black", back_color="white")
+    img.save(output_file)
     
-    # Display in terminal if requested
-    if show_terminal:
-        # Use ASCII art for terminal (compact, no ANSI colors needed)
-        qr.print_ascii(invert=True)
+    width, height = img.size
+    file_size = os.path.getsize(output_file)
+    matrix_size = 17 + (qr.version * 4)
     
-    return 0
+    print(f"✓ Compact QR generated: {output_file}", file=sys.stderr)
+    print(f"  Version: {qr.version} (matrix: {matrix_size}×{matrix_size})", file=sys.stderr)
+    print(f"  Image size: {width}×{height} pixels", file=sys.stderr)
+    print(f"  File size: {file_size:,} bytes ({file_size/1024:.1f} KB)", file=sys.stderr)
+    
+    # Only show in terminal for smaller QR codes (version < 10)
+    if os.environ.get('SHOW_TERMINAL') == '1':
+        if qr.version < 10:
+            print("", file=sys.stderr)
+            print_terminal_qr(qr)
+        else:
+            print("", file=sys.stderr)
+            print(f"  (QR too large for terminal display - open {output_file} to view)", file=sys.stderr)
+    
+    return output_file
+
+def print_terminal_qr(qr):
+    matrix = qr.get_matrix()
+    for i in range(0, len(matrix), 2):
+        line = ""
+        for j in range(len(matrix[0])):
+            top = matrix[i][j] if i < len(matrix) else False
+            bottom = matrix[i+1][j] if i+1 < len(matrix) else False
+            if top and bottom:
+                line += "█"
+            elif top and not bottom:
+                line += "▀"
+            elif not top and bottom:
+                line += "▄"
+            else:
+                line += " "
+        print(line, file=sys.stderr)
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: generate-compact-qr.py <url> [output_file]", file=sys.stderr)
-        print("  url:         URL to encode in QR code", file=sys.stderr)
-        print("  output_file: Optional PNG file path to save", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("Set SHOW_TERMINAL=1 to display QR in terminal", file=sys.stderr)
+    if len(sys.argv) < 3:
+        print("Usage: generate-compact-qr.py <url> <output_file>", file=sys.stderr)
         sys.exit(1)
-    
-    url = sys.argv[1]
-    output_file = sys.argv[2] if len(sys.argv) > 2 else None
-    show_terminal = os.environ.get('SHOW_TERMINAL', '0') == '1'
-    
-    try:
-        sys.exit(generate_compact_qr(url, output_file, show_terminal))
-    except Exception as e:
-        print(f"Error generating QR code: {e}", file=sys.stderr)
-        sys.exit(1)
+    generate_compact_qr(sys.argv[1], sys.argv[2])
