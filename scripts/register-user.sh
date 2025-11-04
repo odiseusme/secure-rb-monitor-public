@@ -1262,8 +1262,9 @@ start_monitoring_prompt() {
     success "Registration complete!"
     echo ""
     echo "Start monitoring manually:"
-    echo "  ${CYAN}docker compose up -d${NC}  (recommended)"
-    echo "  ${CYAN}./start-monitoring.sh${NC}  (alternative)"
+    echo "  ${CYAN}docker compose up -d${NC}  (local monitor only)"
+    echo "  ${CYAN}./start-monitoring.sh start${NC}  (cloud sync only)"
+    echo "  ${CYAN}docker compose up -d && ./start-monitoring.sh start${NC}  (both)"
     echo "═══════════════════════════════════════════════════════════"
     return 0
   fi
@@ -1283,48 +1284,139 @@ start_monitoring_prompt() {
   [ -x "./start-monitoring.sh" ] && has_script=true
   
   echo ""
+  echo "═══════════════════════════════════════════════════════════"
+  echo "${BOLD}How would you like to monitor?${NC}"
+  echo "═══════════════════════════════════════════════════════════"
+  echo ""
+  echo "  ${BOLD}[L]${NC} Local only - View monitor at http://localhost:8080"
+  echo "      (No cloud sync, no remote dashboard access)"
+  echo ""
+  echo "  ${BOLD}[C]${NC} Cloud sync - Update remote dashboard + local monitor"
+  echo "      (Recommended: Full monitoring with remote access)"
+  echo ""
+  echo "  ${BOLD}[S]${NC} Skip - I'll start monitoring manually later"
+  echo ""
   
-  # Prompt to start monitoring (no timeout)
-  local yn
-  read -r -p "Start monitoring now? [Y/n]: " yn
-  yn="${yn:-Y}"
+  # Get user choice
+  local choice=""
+  while [[ ! "$choice" =~ ^[LlCcSs]$ ]]; do
+    read -r -p "Your choice [L/C/S]: " choice
+    choice="${choice:-S}"
+  done
   
-  if [[ ! "$yn" =~ ^[Yy]$ ]]; then
-    echo ""
-    info "Start monitoring when ready:"
-    if [ "$has_compose" = true ]; then
-      echo "  ${CYAN}docker compose up -d${NC}"
-    elif [ "$has_script" = true ]; then
-      echo "  ${CYAN}./start-monitoring.sh${NC}"
-    fi
-    return 0
-  fi
+  echo ""
   
-  # Try to start monitoring
-  if [ "$has_compose" = true ]; then
-    info "Starting monitoring with Docker Compose..."
-    if docker compose up -d --build 2>&1; then
-      success "Monitoring started successfully!"
-      echo ""
-      echo "View logs: ${CYAN}docker compose logs -f${NC}"
-      echo "Stop monitoring: ${CYAN}docker compose down${NC}"
-    else
-      warn "Failed to start Docker Compose"
-      if [ "$has_script" = true ]; then
-        echo "Try: ${CYAN}./start-monitoring.sh${NC}"
+  case "${choice,,}" in
+    l)
+      # Local only - just Docker container
+      if [ "$has_compose" = true ]; then
+        info "Starting local monitor..."
+        if docker compose up -d --build 2>&1; then
+          success "Local monitor started!"
+          echo ""
+          echo "  Monitor: ${CYAN}http://localhost:8080${NC}"
+          echo "  View logs: ${CYAN}docker compose logs -f${NC}"
+          echo "  Stop: ${CYAN}docker compose down${NC}"
+          echo ""
+          info "To enable cloud sync later, run: ${CYAN}./start-monitoring.sh start${NC}"
+        else
+          warn "Failed to start Docker Compose"
+        fi
+      else
+        warn "Docker Compose not available"
+        echo "Install Docker and try again"
       fi
-    fi
-  elif [ "$has_script" = true ]; then
-    info "Starting monitoring with start-monitoring.sh..."
-    if ./start-monitoring.sh & then
-      success "Monitoring started!"
-    else
-      warn "Failed to start monitoring script"
-    fi
-  else
-    warn "No startup method found"
-    echo "Install Docker or run: ${CYAN}node cloudflare-sync.js${NC}"
-  fi
+      ;;
+      
+    c)
+      # Cloud sync - both Docker container and uploader
+      local docker_started=false
+      local uploader_started=false
+      
+      # Start Docker container first
+      if [ "$has_compose" = true ]; then
+        info "Starting local monitor..."
+        if docker compose up -d --build 2>&1; then
+          success "Local monitor started"
+          docker_started=true
+        else
+          warn "Failed to start Docker Compose"
+        fi
+      else
+        warn "Docker Compose not available - skipping local monitor"
+      fi
+      
+      echo ""
+      
+      # Start uploader/sync
+      if [ "$has_script" = true ]; then
+        info "Starting cloud sync uploader..."
+        
+        # Start in background with nohup to survive terminal close
+        if nohup ./start-monitoring.sh start >/dev/null 2>&1 &
+        then
+          local uploader_pid=$!
+          sleep 2  # Give it a moment to start
+          
+          if kill -0 "$uploader_pid" 2>/dev/null; then
+            success "Cloud sync uploader started (PID: $uploader_pid)"
+            uploader_started=true
+          else
+            warn "Uploader failed to start"
+          fi
+        else
+          warn "Failed to start cloud sync uploader"
+        fi
+      else
+        warn "start-monitoring.sh not found - skipping cloud sync"
+      fi
+      
+      echo ""
+      
+      # Summary
+      if [ "$docker_started" = true ] && [ "$uploader_started" = true ]; then
+        success "Full monitoring system running!"
+        echo ""
+        echo "  Local monitor: ${CYAN}http://localhost:8080${NC}"
+        echo "  Remote dashboard: ${CYAN}${DASHBOARD_URL:-Check .env for URL}${NC}"
+        echo ""
+        echo "  View logs: ${CYAN}docker compose logs -f${NC}"
+        echo "  Stop all: ${CYAN}docker compose down && pkill -f cloudflare-sync${NC}"
+      elif [ "$docker_started" = true ]; then
+        success "Local monitor running (cloud sync failed)"
+        echo ""
+        echo "  Monitor: ${CYAN}http://localhost:8080${NC}"
+        echo "  Retry cloud sync: ${CYAN}./start-monitoring.sh start${NC}"
+      elif [ "$uploader_started" = true ]; then
+        success "Cloud sync running (local monitor failed)"
+        echo ""
+        echo "  Retry local: ${CYAN}docker compose up -d${NC}"
+      else
+        warn "Failed to start monitoring system"
+        echo "Try manually: ${CYAN}docker compose up -d && ./start-monitoring.sh start${NC}"
+      fi
+      ;;
+      
+    s)
+      # Skip - show instructions
+      info "Start monitoring when ready:"
+      echo ""
+      if [ "$has_compose" = true ]; then
+        echo "  ${BOLD}Local only:${NC}"
+        echo "    ${CYAN}docker compose up -d${NC}"
+        echo ""
+      fi
+      if [ "$has_script" = true ]; then
+        echo "  ${BOLD}Cloud sync only:${NC}"
+        echo "    ${CYAN}./start-monitoring.sh start${NC}"
+        echo ""
+      fi
+      if [ "$has_compose" = true ] && [ "$has_script" = true ]; then
+        echo "  ${BOLD}Both (recommended):${NC}"
+        echo "    ${CYAN}docker compose up -d && ./start-monitoring.sh start${NC}"
+      fi
+      ;;
+  esac
 }
 
 show_summary() {
