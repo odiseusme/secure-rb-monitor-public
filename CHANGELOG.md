@@ -1,3 +1,41 @@
+## [1.2.1] - 2025-11-04
+
+### Fixed
+- **Passphrase Flow Double-Prompt Bug**: Fixed users being asked twice about saving passphrase
+  - Root cause: Subshell execution in `PASSPHRASE="$(get_passphrase)"` lost global variable
+  - Solution: Changed to `_PASSPHRASE_RESULT` global variable pattern
+  - Confirmation now appears immediately after save decision (before registration)
+  - No more confusing post-registration prompt
+
+- **Passphrase Flow UX Improvements**: Security notice and save decision moved before "Press Enter"
+  - Old flow: Show passphrase → Press Enter → Registration → Security notice → Save decision
+  - New flow: Show passphrase → Security notice → Save decision → Confirmation → Press Enter → Registration
+  - Users make informed decisions BEFORE registration completes
+  - Clearer understanding of security implications
+
+- **Docker Missing lib/ Directory**: Fixed module not found errors in rebuilt containers
+  - Added `COPY lib/ ./lib/` to Dockerfile (line 30)
+  - lib/ directory introduced in Oct 30 commit but Dockerfile never updated
+  - Old images worked fine; rebuilds triggered the bug
+  - Now properly includes egress security modules
+
+- **Network Egress Security**: Internal Docker services can now communicate via HTTP
+  - Added `isInternalDockerService()` function to detect Docker internal hostnames
+  - Pattern matches: `service_name-container-number`, `*.internal`, `host.docker.internal`
+  - Allows HTTP protocol and custom ports for internal services only
+  - External domains still require HTTPS with standard ports
+  - Fixes watcher connectivity issues (watcher_ergo-service-1:3000, watchme_first-service-1:3000)
+
+- **Dashboard URL in Monitoring Summary**: Now shows correct URL from registration
+  - Changed from stale `DASHBOARD_URL` variable to `dashboard_url` parameter
+  - Ensures users see the right URL when starting cloud sync
+
+### Changed
+- **Dry Run Python Check**: Now checks for python3-qrcode library availability
+  - Shows installation instructions if missing
+  - Warns users QR generation will be unavailable
+  - Gives option to quit and install before registering
+
 ## [1.2.0] - 2025-11-04
 
 ### Added

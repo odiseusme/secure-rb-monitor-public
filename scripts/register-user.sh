@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # register-user.sh — User registration with interactive menu and security upgrades
-# Version: 1.2.0
+# Version: 1.2.1
 # Date: 2025-11-04
 set -Eeuo pipefail
 
@@ -12,7 +12,7 @@ cd "$PROJECT_ROOT"
 # VERSION
 # ============================================================================
 
-VERSION="1.2.0"
+VERSION="1.2.1"
 
 # ============================================================================
 # CONFIGURATION
