@@ -1664,23 +1664,6 @@ EOF
     
     if [[ "$gen_qr" =~ ^[Yy]$ ]]; then
       QR_OUT_FILE="dashboard-${public_id}.png"
-      
-      # Ask about passphrase embedding
-#      echo ""
-#      echo "${YELLOW}⚠  Security Notice:${NC} Embedding passphrase in QR makes auto-login possible"
-#      echo "   but anyone with the QR code can access your dashboard."
-#      echo ""
-      
-#      local embed_qr=""
-#      while [[ ! "$embed_qr" =~ ^[YyNn]$ ]]; do
-#        read -p "Embed passphrase for auto-login? [y/N]: " embed_qr
-#       embed_qr=${embed_qr:-n}
-#      done
-      
-#      if [[ "$embed_qr" =~ ^[Yy]$ ]]; then
-#        EMBED_PASSPHRASE_QR=1
-#      fi
-      
       echo ""
       generate_qr_code "$dashboard_url" "$QR_OUT_FILE" "$PASSPHRASE" || true
     fi
