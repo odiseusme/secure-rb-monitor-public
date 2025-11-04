@@ -12,12 +12,17 @@
 | `register-user.sh` | 58KB | **Primary registration** - v1.2.1 with passphrase UX fixes | End users, installation | Core workflow |
 | `prepare_build.sh` | 16KB | **Initial setup** - Creates .env, config.json, selects ports | Installation, first-time setup | Core workflow |
 | `generate-compact-qr.py` | 2.4KB | **Compact QR generation** - Terminal + PNG QR codes | register-user.sh (v1.2.0+) | New feature |
+| `show_monitor_url_and_qr.sh` | 11.8KB | **Display dashboard access** - Show URLs/QR for local/remote dashboards | Users who want to view dashboard without re-registering | Standalone utility |
+
+### ✅ UTILITY (Standalone Features)
+| File | Size | Purpose | Use Case | Recommendation |
+|------|------|---------|----------|----------------|
+| `show_monitor_url_and_qr.sh` | 11.8KB | **Display dashboard URLs/QR** - Shows local/remote dashboard with QR codes | Users who want to view dashboard URL/QR without re-registering | **KEEP** - Useful standalone utility |
 
 ### ⚠️ REDUNDANT/LEGACY (Move to Clutter Bag)
 | File | Size | Purpose | Redundant With | Recommendation |
 |------|------|---------|----------------|----------------|
 | `register-with-qr.sh` | 5.7KB | **Legacy registration** - Calls old register-user.sh, generates QR | register-user.sh (now has integrated QR) | **MOVE** - Superseded by v1.2.0+ |
-| `show_monitor_url_and_qr.sh` | 11.8KB | **Display dashboard URLs/QR** - Shows local/remote dashboard | register-user.sh output + monitor_control.sh status | **MOVE** - Functionality merged |
 
 ### 🔧 UTILITY (Decision Needed)
 | File | Size | Purpose | Decision | Notes |
@@ -76,16 +81,18 @@
 - **README mentions:** "Alternative: register-with-qr.sh (Legacy)"
 - **Decision:** **MOVE TO CLUTTER BAG** - No longer needed; functionality absorbed
 
-### 5. `show_monitor_url_and_qr.sh` ⚠️ REDUNDANT → MOVE
-- **Status:** Dashboard display helper (Oct 20)
+### 5. `show_monitor_url_and_qr.sh` ✅ KEEP
+- **Status:** Dashboard display helper (Oct 20) - **RESTORED**
 - **Purpose:**
   - Shows local (Docker) and remote (Cloudflare) dashboard URLs
-  - Generates QR codes for both
+  - Generates QR codes for both (terminal + PNG)
   - Optional passphrase embedding
-- **Redundant with:**
-  - register-user.sh shows dashboard URL with QR after registration
-  - monitor_control.sh shows status and URLs
-- **Decision:** **MOVE TO CLUTTER BAG** - Functionality covered by other scripts
+  - Interactive mode (choose local/remote) or flags (--local, --remote)
+- **Use Case:** Users who want to view dashboard URL/QR **without re-registering**
+  - After registration completed, they can run this anytime
+  - Useful for sharing access (e.g., mobile phone via QR)
+  - No need to dig through registration output
+- **Decision:** **KEEP** - Standalone utility, not redundant (serves different purpose than registration flow)
 
 ### 6. `monitor_control.sh` 🔧 UTILITY
 - **Status:** Orchestration controller (Oct 23)
@@ -159,14 +166,12 @@ rm -rf scripts/.run/
 
 | Action | Count | Files |
 |--------|-------|-------|
-| ✅ KEEP | 3 | register-user.sh, prepare_build.sh, generate-compact-qr.py |
-| ⚠️ MOVE | 2 | register-with-qr.sh, show_monitor_url_and_qr.sh |
-| 🔧 DECIDE | 1 | monitor_control.sh (need your input) |
+| ✅ KEEP | 5 | register-user.sh, prepare_build.sh, generate-compact-qr.py, monitor_control.sh, show_monitor_url_and_qr.sh |
+| ⚠️ MOVE | 1 | register-with-qr.sh |
 | 🧪 RELOCATE | 1 | test-log-hygiene.sh → tests/ |
 | ❌ DELETE | 2 | .prepare_build.sh.swp, .run/ |
 
-**Next Steps:**
-1. Answer the 3 questions above
-2. I'll execute the cleanup (with your approval)
-3. Update .gitignore if needed
-4. Commit cleanup changes
+**Update (Nov 4, 2025):**
+After initial cleanup, `show_monitor_url_and_qr.sh` was **restored** based on user feedback.
+**Reason:** Provides standalone utility for users to view dashboard URL/QR without re-registering.
+**Use case:** After setup, users can quickly get QR code for mobile access anytime.
