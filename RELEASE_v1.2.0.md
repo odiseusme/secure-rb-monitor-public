@@ -1,8 +1,8 @@
-# v2.2.0 Release Summary
+# v1.2.0 Release Summary
 
 ## Overview
 
-Version 2.2.0 brings significant UX improvements to the user registration and monitoring startup workflow. All changes are backward compatible with no migration required.
+Version 1.2.0 brings significant UX improvements to the user registration and monitoring startup workflow. All changes are backward compatible with no migration required.
 
 ## What's New
 
@@ -73,7 +73,7 @@ pip3 install qrcode
 
 **No migration required!** All changes are backward compatible.
 
-If you're upgrading from v2.1.0:
+If you're upgrading from v1.1.0:
 1. `git pull` to get latest changes
 2. Install `python3-qrcode`: `sudo apt-get install python3-qrcode`
 3. (Optional) Remove `qrencode` if no longer needed elsewhere
@@ -105,7 +105,7 @@ nohup ./start-monitoring.sh start >/dev/null 2>&1 &
 - `scripts/register-user.sh`: Main improvements
 - `scripts/generate-compact-qr.py`: New QR generator (70 lines)
 - `.env`: Passphrases now quoted
-- `CHANGELOG.md`: Full v2.2.0 entry
+- `CHANGELOG.md`: Full v1.2.0 entry
 
 ---
 
@@ -127,7 +127,7 @@ nohup ./start-monitoring.sh start >/dev/null 2>&1 &
 - Full changelog: [CHANGELOG.md](./CHANGELOG.md)
 - Project documentation: [RBMonitor_project_description_and_future_plans.md](./RBMonitor_project_description_and_future_plans.md)
 - Installation guide: [README.md](./README.md)
-- Git tag: `v2.2.0`
+- Git tag: `v1.2.0`
 
 ---
 

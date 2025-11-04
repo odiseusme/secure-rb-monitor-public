@@ -1,4 +1,4 @@
-# Documentation Updates for v2.2.0
+# Documentation Updates for v1.2.0
 
 ## Summary of Changes
 
@@ -26,7 +26,7 @@ This release includes major UX improvements to `register-user.sh`:
 - Update dependency list
 
 #### CHANGELOG.md
-- Add v2.2.0 entry with all improvements
+- Add v1.2.0 entry with all improvements
 
 ---
 
@@ -57,7 +57,7 @@ Clarify the difference:
 ## Version Numbering
 
 Current: v2.1.0
-Proposed: **v2.2.0**
+Proposed: **v1.2.0**
 
 Rationale:
 - Minor version bump (not patch) due to new features
@@ -71,5 +71,5 @@ Rationale:
 1. ✅ README.md - User-facing guide
 2. ✅ RBMonitor_project_description_and_future_plans.md - Technical reference
 3. ✅ CHANGELOG.md - Version history
-4. ✅ scripts/register-user.sh - Update VERSION variable to 2.2.0
-5. ✅ Create git tag: v2.2.0
+4. ✅ scripts/register-user.sh - Update VERSION variable to 1.2.0
+5. ✅ Create git tag: v1.2.0

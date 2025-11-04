@@ -1,4 +1,4 @@
-## [2.2.0] - 2025-11-04
+## [1.2.0] - 2025-11-04
 
 ### Added
 - **Compact QR Code Generation**: New Python-based QR generator creates terminal-friendly codes
