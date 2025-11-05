@@ -42,6 +42,10 @@ Monitor watchers on your local machine with a web dashboard.
 ```bash
 git clone https://github.com/odiseusme/secure-rb-monitor-public.git
 cd secure-rb-monitor-public
+
+# Ensure scripts are executable (important after fresh clone or git reset)
+chmod +x scripts/*.sh scripts/*.py *.sh
+
 ./scripts/prepare_build.sh
 ```
 
@@ -75,6 +79,10 @@ Monitor from anywhere with end-to-end encrypted remote access.
 ```bash
 git clone https://github.com/odiseusme/secure-rb-monitor-public.git
 cd secure-rb-monitor-public
+
+# Ensure scripts are executable (important after fresh clone or git reset)
+chmod +x scripts/*.sh scripts/*.py *.sh
+
 ./scripts/prepare_build.sh
 docker compose up -d --build
 ```
