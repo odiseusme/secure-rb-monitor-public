@@ -20,19 +20,26 @@ IFS=$'\n\t'
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# Load .env file if it exists (for BASE_URL, DASH_PASSPHRASE, etc.)
+if [ -f ".env" ]; then
+  set -a
+  source .env
+  set +a
+fi
+
 RUN_DIR="${RUN_DIR:-.run}"
 mkdir -p "$RUN_DIR"
 
 # Producer (Docker) settings
 USE_DOCKER="${USE_DOCKER:-1}"    # 1=use docker
 CONTAINER_NAME="${CONTAINER_NAME:-rosen-bridge-monitor}"     # your actual container name
-WRITE_STATUS_IMAGE="${WRITE_STATUS_IMAGE:-}"                  # optional custom image
+WRITE_STATUS_IMAGE="${WRITE_STATUS_IMAGE:-}"                 # optional custom image
 WRITE_STATUS_PATH="${WRITE_STATUS_PATH:-write_status.js}"    # repo-relative path to producer
 
 # Uploader (host) settings
 UPLOADER_PID_FILE="$RUN_DIR/uploader.pid"
 
-# Worker base URL
+# Worker base URL (now reads from .env first, then defaults to localhost)
 BASE_URL="${BASE_URL:-http://localhost:38472}"
 
 # Colors/logging
