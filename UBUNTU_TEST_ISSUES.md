@@ -33,6 +33,18 @@ fi
 **Status:** ✅ FIXED in commit 64cb4e1  
 **Impact:** Users can now restart services seamlessly after reboot without manual environment variable exports
 
+### 8. Uploader Doesn't Auto-Start After Reboot
+**Problem:** After system reboot, Docker container auto-restarts but uploader (Node.js host process) does not  
+**Impact:** User must manually run `./scripts/monitor_control.sh start` after every reboot  
+**Solution:** Created optional systemd service for auto-start:
+- `scripts/install-systemd-service.sh` - Install auto-start service
+- `scripts/uninstall-systemd-service.sh` - Remove service
+- Service manages uploader lifecycle (start on boot, restart on failure)
+- Logs available via `journalctl --user -u rbmonitor-uploader.service`
+**Status:** ✅ IMPLEMENTED in feature/ubuntu-fixes branch  
+**Usage:** Optional - users who want auto-start can run install script, others use manual start
+**Note:** Docker container already has restart policy, systemd service only needed for uploader
+
 ### 2. Missing Executable Permissions After Reset
 **Problem:** `./scripts/register-user.sh` failed - "Permission denied"  
 **Cause:** `git reset --hard` restored file permissions from commit (not executable)  

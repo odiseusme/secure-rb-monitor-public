@@ -336,7 +336,9 @@ $ ./scripts/monitor_control.sh status
 
 #### After System Reboot
 
-**The monitor does NOT start automatically after reboot.** To restart monitoring:
+**Option 1: Manual Start (Default)**
+
+The monitor does NOT start automatically after reboot. To restart monitoring:
 
 ```bash
 cd ~/secure-rb-monitor-public
@@ -349,7 +351,41 @@ cd ~/secure-rb-monitor-public
 3. Uploader process restarts with your credentials
 4. Monitoring resumes seamlessly
 
-**Note:** The deployed Cloudflare Worker is always running - you don't need to run `wrangler dev` locally. Your monitor just needs to connect to it using the `BASE_URL` from your `.env` file.
+**Option 2: Auto-Start with Systemd (Recommended for Production)**
+
+Install a systemd service to auto-start the uploader after reboot:
+
+```bash
+./scripts/install-systemd-service.sh
+```
+
+This creates a user service that:
+- ✅ Auto-starts uploader on boot
+- ✅ Restarts on failure
+- ✅ Manages logs via `journalctl`
+- ✅ No manual intervention needed
+
+**Service Management:**
+```bash
+# Check status
+systemctl --user status rbmonitor-uploader.service
+
+# View logs
+journalctl --user -u rbmonitor-uploader.service -f
+
+# Stop/start manually
+systemctl --user stop rbmonitor-uploader.service
+systemctl --user start rbmonitor-uploader.service
+
+# Remove auto-start
+./scripts/uninstall-systemd-service.sh
+```
+
+**Note:** The Docker container (producer) already has auto-restart configured via docker-compose. The systemd service is only for the uploader process.
+
+**Worker is Always Running:**
+
+The deployed Cloudflare Worker is always running - you don't need to run `wrangler dev` locally. Your monitor just needs to connect to it using the `BASE_URL` from your `.env` file.
 
 **Troubleshooting:**
 - If you get "Worker not responding at localhost:38472", check that `.env` contains your production Worker URL:
