@@ -40,7 +40,18 @@ echo ""
 # Step 3: Pull latest
 echo "📥 Step 3: Pulling v1.2.1..."
 git fetch origin
-git pull origin main
+
+# Handle divergent branches if present
+if ! git pull origin main 2>&1; then
+    echo "⚠️  Divergent branches detected - using reset method..."
+    git reset --hard origin/main
+    git clean -fd
+    echo "✓ Repository reset to origin/main"
+fi
+
+# CRITICAL: Restore executable permissions (git reset removes them)
+echo "🔧 Restoring executable permissions..."
+chmod +x scripts/*.sh scripts/*.py 2>/dev/null || true
 echo "✓ Updated to latest version"
 echo ""
 

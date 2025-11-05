@@ -488,7 +488,12 @@ main() {
 
     # --- Cloudflare sync setup prompt ---
     while true; do
-      read -r -p "Would you like to set up encrypted Cloudflare sync? [y/N] " cf_reply
+      echo ""
+      echo "💡 Cloudflare Sync Setup (Optional)"
+      echo "   This enables encrypted remote monitoring via Cloudflare Worker."
+      echo "   You can skip this now and run ./scripts/register-user.sh later."
+      echo ""
+      read -r -p "Set up Cloudflare sync now? [y/N] " cf_reply
       cf_reply="${cf_reply,,}"
       if [[ "$cf_reply" == "y" || "$cf_reply" == "yes" ]]; then
         if [ -f "./scripts/register-user.sh" ]; then
@@ -498,6 +503,7 @@ main() {
         fi
         break
       else
+        log "Skipping Cloudflare setup. Run ./scripts/register-user.sh when ready."
         break
       fi
     done

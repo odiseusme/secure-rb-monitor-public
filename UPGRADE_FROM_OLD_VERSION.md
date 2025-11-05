@@ -43,8 +43,19 @@ docker rmi $(docker images | grep rosen-bridge-monitor | awk '{print $3}')
 ```bash
 git fetch origin
 git checkout main
+
+# If you get "divergent branches" error:
+git reset --hard origin/main
+git clean -fd
+
+# Or if no conflicts:
 git pull origin main
+
+# IMPORTANT: Restore executable permissions
+chmod +x scripts/*.sh scripts/*.py
 ```
+
+**Note:** `git reset --hard` removes executable permissions, so you MUST run `chmod +x` after.
 
 ### Step 4: Review What Changed
 ```bash

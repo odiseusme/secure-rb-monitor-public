@@ -508,6 +508,60 @@ BASE_URL="https://your-worker.workers.dev" ./scripts/register-user.sh --invite I
 
 ---
 
+### Admin API Keys: Local vs Production
+
+**Two Different Admin Keys:**
+
+1. **Production Worker** (deployed to Cloudflare)
+   - Admin key stored in Cloudflare secrets: `wrangler secret put ADMIN_API_KEY`
+   - Used for production invite generation
+   - Example endpoint: `https://your-worker.workers.dev/api/admin/create-invite`
+
+2. **Local Development** (`wrangler dev`)
+   - Admin key in `.dev.vars` file: `ADMIN_API_KEY=your-local-key`
+   - Used for local testing only
+   - Example endpoint: `http://localhost:38472/api/admin/create-invite`
+
+**Important:** Production and local admin keys are SEPARATE. If you're generating invites for actual users, use the **production Worker** endpoint with the production admin key.
+
+**Retrieve production admin key:**
+```bash
+# From your Cloudflare dashboard or wrangler secrets
+# Note: Secrets can't be read back, so store securely when you create them
+```
+
+---
+
+### Cloudflare KV Limits
+
+**Free Tier Limits:**
+- **1,000 writes/day** (resets at midnight UTC)
+- **100,000 reads/day**
+- **1 GB total storage**
+
+**What Uses Writes:**
+- User registration (1 write per user)
+- Status uploads (2-4 writes/hour per active monitor)
+- Invite creation (1 write per invite)
+
+**If You Hit the Daily Limit:**
+- Error: `KV put() limit exceeded for the day`
+- **Wait:** Limit resets at midnight UTC
+- **Or Upgrade:** Paid Workers plan ($5/month) = unlimited KV writes
+
+**Monitor Your Usage:**
+```bash
+# Check KV namespace usage in Cloudflare dashboard
+# Workers & Pages → KV → Your namespace → Metrics
+```
+
+**Best Practices:**
+- Don't create excessive invites (generate batch once)
+- Monitor upload frequency (default: every 30 seconds)
+- Consider paid plan if running multiple monitors (>10 users)
+
+---
+
 ### Monitoring Usage
 
 ```bash
