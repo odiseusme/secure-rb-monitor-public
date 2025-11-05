@@ -334,6 +334,30 @@ $ ./scripts/monitor_control.sh status
 - Adopts externally-started processes where possible
 - Supports differently named containers with auto-detection
 
+#### After System Reboot
+
+**The monitor does NOT start automatically after reboot.** To restart monitoring:
+
+```bash
+cd ~/secure-rb-monitor-public
+./scripts/monitor_control.sh start
+```
+
+**What happens:**
+1. Script automatically loads configuration from `.env` file
+2. Docker container restarts (if stopped)
+3. Uploader process restarts with your credentials
+4. Monitoring resumes seamlessly
+
+**Note:** The deployed Cloudflare Worker is always running - you don't need to run `wrangler dev` locally. Your monitor just needs to connect to it using the `BASE_URL` from your `.env` file.
+
+**Troubleshooting:**
+- If you get "Worker not responding at localhost:38472", check that `.env` contains your production Worker URL:
+  ```bash
+  cat .env | grep BASE_URL
+  # Should show: BASE_URL=https://your-worker-name.workers.dev
+  ```
+
 ---
 
 ### Registration with QR Code (Mobile-Friendly)
