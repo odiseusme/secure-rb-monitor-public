@@ -5,13 +5,33 @@
 
 ---
 
-## Issues Encountered
+## Issues Found
 
-### 1. Git Divergent Branches
-**Problem:** `git pull` failed with "divergent branches" error  
-**Cause:** Old repo had local changes conflicting with v1.2.1  
-**Solution:** Force reset with `git reset --hard origin/main`  
-**Fix for README:** Add to UPGRADE_FROM_OLD_VERSION.md (already done)
+### 1. Git Divergent Branches Error
+**When:** Running `git pull` on Ubuntu PC with old monitor version  
+**Error:** `fatal: You have divergent branches and need to specify how to reconcile them`  
+**Solution:**
+```bash
+git fetch origin
+git reset --hard origin/main
+git clean -fd
+```
+**Side Effect:** Lost executable permissions on scripts (see issue #2)
+
+### 7. monitor_control.sh Doesn't Auto-Load .env After Reboot
+**When:** Running `./scripts/monitor_control.sh start` after system reboot  
+**Error:** `[ERROR] Worker not responding at http://localhost:38472`  
+**Root Cause:** Script had hardcoded `BASE_URL="${BASE_URL:-http://localhost:38472}"` default but didn't source .env file automatically. After reboot, fresh shell has no BASE_URL exported, so defaults to localhost even when production URL is in .env  
+**Solution:** Added auto-load of .env at script start:
+```bash
+if [ -f ".env" ]; then
+  set -a
+  source .env
+  set +a
+fi
+```
+**Status:** ✅ FIXED in commit 64cb4e1  
+**Impact:** Users can now restart services seamlessly after reboot without manual environment variable exports
 
 ### 2. Missing Executable Permissions After Reset
 **Problem:** `./scripts/register-user.sh` failed - "Permission denied"  
