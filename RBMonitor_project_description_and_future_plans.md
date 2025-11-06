@@ -1388,3 +1388,47 @@ Document new flags in README
 Follow existing error handling patterns
 
 Ensure cross-platform compatibility (Linux, macOS)
+
+---
+
+## Future Enhancements (From TODO.md - Added Nov 6, 2025)
+
+### UI/UX Improvements
+- [ ] Show unreachable watcher status in UI (red indicator, error badge)
+- [ ] Desktop shortcut/launcher for prepare_build.sh script
+- [ ] Interactive watcher add/remove from UI
+- [ ] Y/n prompts for building after discovery
+- [ ] Progress bars for permit utilization
+- [ ] Mobile-responsive layout improvements
+- [ ] Dark mode toggle
+
+### Monitoring & Alerts
+- [ ] Change registration to cloudflare service to self-serve
+- [ ] Email/webhook alerts for watcher failures
+- [ ] Historical status tracking and charts
+- [ ] Performance metrics (response times, uptime %)
+- [ ] Configurable alert thresholds
+- [ ] Status change notifications
+
+### Technical Enhancements
+- [ ] TypeScript migration (Note: Partial - Prometheus mentioned in existing plans)
+- [ ] Structured logging with log rotation
+- [ ] Health check endpoint improvements
+- [ ] Configuration validation
+- [ ] Automated testing suite
+- [ ] CI/CD pipeline improvements
+- [ ] Load-balancing of cloudflare calls
+
+### Operations
+- [ ] Backup/restore procedures
+- [ ] Multi-environment support (dev/staging/prod)
+- [ ] Load balancing for multiple monitor instances
+- [ ] Database persistence option
+- [ ] Configuration management improvements
+
+### Frontend Fixes (High Priority)
+- [ ] **Frontend Robustness:** Patch index.html to safeguard against non-object or missing permitStatus
+- [x] **Backend Normalization:** Always output permitStatus as an object in status.json (DONE)
+- [ ] **Debug Watcher Down UI:** Re-test UI and status for down/unknown watchers
+- [ ] **General Testing:** Verify overall system health and dashboard accuracy
+
