@@ -45,6 +45,19 @@ fi
 **Usage:** Optional - users who want auto-start can run install script, others use manual start
 **Note:** Docker container already has restart policy, systemd service only needed for uploader
 
+### 9. Egress Validator Blocks Private IP Addresses (CRITICAL)
+**When:** After pulling v1.2.1 with egress security, watchers can't connect to Ergo node  
+**Error:** Watchers unable to fetch from `http://10.0.0.8:9053/`  
+**Root Cause:** Egress validator only allowed Docker service names and public allowlist, blocked all IP addresses including private/LAN IPs  
+**Impact:** BREAKING - watchers cannot connect to nodes/services on LAN (10.x.x.x, 192.168.x.x, etc.)  
+**Solution:** Updated egress validator to automatically allow private IP ranges:
+- 10.0.0.0/8 (Class A private)
+- 172.16.0.0/12 (Class B private)  
+- 192.168.0.0/16 (Class C private)
+- 127.0.0.0/8 (localhost)
+**Status:** ✅ FIXED in commit c348731  
+**Impact:** Users can now connect to LAN services without manual ALLOWED_EGRESS_HOSTS configuration
+
 ### 2. Missing Executable Permissions After Reset
 **Problem:** `./scripts/register-user.sh` failed - "Permission denied"  
 **Cause:** `git reset --hard` restored file permissions from commit (not executable)  
