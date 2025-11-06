@@ -126,7 +126,6 @@ get_lan_ip() {
 show_qr() {
   local url="$1"
   local filename="$2"
-  local description="$3"
   
   # Strip ANSI color codes from URL (in case it got any)
   url=$(echo "$url" | sed 's/\x1b\[[0-9;]*m//g')
@@ -139,18 +138,16 @@ show_qr() {
   fi
   
   echo ""
-  echo "${BOLD}${description}${NC}"
-  echo "${BLUE}${url}${NC}"
-  echo ""
   
   # Terminal QR
-  qrencode -t ANSIUTF8 "$url" 2>/dev/null || {
+  qrencode -t ANSIUTF8 -m 2 "$url" 2>/dev/null || {
     echo "${YELLOW}⚠  Failed to generate terminal QR${NC}"
     return
   }
+  echo ""
   
   # PNG QR
-  if qrencode -o "$filename" "$url" 2>/dev/null; then
+  if qrencode -o "$filename" -m 2 "$url" 2>/dev/null; then
     echo "${GREEN}✓ Saved QR code: ${BOLD}${filename}${NC}"
   else
     echo "${YELLOW}⚠  Failed to save PNG QR code${NC}"
@@ -160,7 +157,7 @@ show_qr() {
 show_local_dashboard() {
   echo ""
   echo "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  echo "${BOLD}${CYAN}   LOCAL DASHBOARD (Docker)${NC}"
+  echo "${BOLD}${CYAN}   Rosen Bridge Monitor - LOCAL DASHBOARD${NC}"
   echo "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   
   # Check if Docker container is running
@@ -208,16 +205,13 @@ show_local_dashboard() {
     echo ""
     echo "${BOLD}Access from mobile/other devices (same network):${NC}"
     echo "  ${BLUE}http://${lan_ip}:${host_port}/${NC}"
+    echo ""
     
     # Ask to show QR
     if ask_yn "${BOLD}Show QR code for mobile access?${NC}" "y"; then
-      show_qr "http://${lan_ip}:${host_port}/" \
-              "dashboard-local.png" \
-              "${BOLD}${GREEN}📱 Scan with mobile device:${NC}"
+      show_qr "http://${lan_ip}:${host_port}/" "dashboard-local.png"
     fi
   fi
-  
-  echo ""
 }
 
 show_remote_dashboard() {
@@ -252,126 +246,24 @@ show_remote_dashboard() {
   fi
   
   echo ""
-  echo "${GREEN}✓ Registered with Cloudflare${NC}"
-  echo "${BOLD}User ID:${NC} ${public_id}"
+  echo "${BOLD}Dashboard URL:${NC}"
   echo ""
-  echo "${BOLD}Dashboard URL (requires passphrase):${NC}"
-  echo "  ${BLUE}${dashboard_url}${NC}"
-  
-  # Ask about passphrase embedding
-  local final_url="$dashboard_url"
-  local embed_now="$EMBED_PASSPHRASE"
-  
-  if [ "$embed_now" = "0" ]; then
-    echo ""
-    echo "${YELLOW}⚠  Security Warning:${NC} Embedding passphrase in URL makes it visible to anyone with the QR code. Use only on personal devices or trusted networks."
-    echo ""
-    
-    if ask_yn "${BOLD}Embed passphrase in URL?${NC}" "n"; then
-      embed_now=1
-    fi
-  fi
-
-  if [ "$embed_now" = "1" ]; then
-    # Get passphrase
-    local passphrase=""
-    
-    # Try to get from .env first
-    if [ -f ".env" ]; then
-      passphrase=$(grep -E '^DASH_PASSPHRASE=' .env | cut -d= -f2- | sed 's/^["'"'"']\(.*\)["'"'"']$/\1/' || true)
-    fi
-    
-    # If not in .env, ask user
-    if [ -z "$passphrase" ]; then
-      echo ""
-      read -r -s -p "Enter dashboard passphrase: " passphrase
-      echo ""
-      
-      if [ -z "$passphrase" ]; then
-        echo "${YELLOW}⚠  No passphrase provided - showing URL without embedding${NC}"
-        embed_now=0
-      fi
-    fi
-    
-    if [ "$embed_now" = "1" ] && [ -n "$passphrase" ]; then
-      # URL encode the passphrase
-      local encoded_pass=$(printf %s "$passphrase" | jq -sRr @uri)
-      final_url="${dashboard_url}#p=${encoded_pass}"
-      
-      echo ""
-      echo "${GREEN}✓ Passphrase embedded in URL fragment${NC}"
-      echo "${BOLD}Note:${NC} Fragment (#p=...) is NOT sent to server - client-side only"
-    fi
-  fi
+  echo "${BLUE}${dashboard_url}${NC}"
   
   # Ask to show QR
   echo ""
-  if ask_yn "${BOLD}Show QR code for dashboard?${NC}" "y"; then
+  if ask_yn "${BOLD}Show QR code to access dashboard?${NC}" "y"; then
     local qr_filename="dashboard-${public_id}.png"
-    local description
-    
-    if [ "$embed_now" = "1" ]; then
-      description="${BOLD}${GREEN}📱 Scan to access dashboard (auto-login):${NC}"
-    else
-      description="${BOLD}${GREEN}📱 Scan to access dashboard (passphrase required):${NC}"
-    fi
-    
-    show_qr "$final_url" "$qr_filename" "$description"
-    
-    if [ "$embed_now" = "0" ]; then
-      echo ""
-      echo "${CYAN}💡 Tip:${NC} Use ${CYAN}--embed-passphrase${NC} flag for auto-login QR"
-    fi
+    show_qr "$dashboard_url" "$qr_filename"
   fi
-  
-  echo ""
 }
 
 # Main logic
 main() {
-  echo ""
-  echo "${BOLD}${CYAN}╔════════════════════════════════════════════════╗${NC}"
-  echo "${BOLD}${CYAN}║   Rosen Bridge Monitor - Dashboard Display     ║${NC}"
-  echo "${BOLD}${CYAN}╚════════════════════════════════════════════════╝${NC}"
-  
-  # Interactive mode if no flags
+  # If no flags specified, show both
   if [ "$SHOW_LOCAL" = "0" ] && [ "$SHOW_REMOTE" = "0" ]; then
-    echo ""
-    
-    if [ "$AUTO_YES" = "1" ]; then
-      # Auto-yes mode shows both
-      SHOW_LOCAL=1
-      SHOW_REMOTE=1
-    else
-      # Interactive: choose one
-      while true; do
-        read -r -p "Display ${BOLD}local (L)${NC} or ${BOLD}remote (R)${NC} dashboard? [L/R] (default: R) " choice
-        choice="${choice,,}"  # lowercase
-        
-        # Default to remote if empty
-        if [ -z "$choice" ]; then
-          choice="r"
-        fi
-        
-        case "$choice" in
-          l|local)
-            SHOW_LOCAL=1
-            break
-            ;;
-          r|remote)
-            SHOW_REMOTE=1
-            break
-            ;;
-          *)
-            echo ""
-            echo "${YELLOW}Invalid choice. Please enter 'L' for local or 'R' for remote.${NC}"
-            echo ""
-            ;;
-        esac
-      done
-        esac
-      done
-    fi
+    SHOW_LOCAL=1
+    SHOW_REMOTE=1
   fi
   
   # Show requested dashboards
@@ -385,16 +277,6 @@ main() {
     show_remote_dashboard || exit_code=$?
   fi
   
-  echo "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  echo ""
-  
-  if [ "$exit_code" = "0" ]; then
-    echo "${GREEN}✓ All done!${NC}"
-  else
-    echo "${YELLOW}⚠  Some issues encountered (see above)${NC}"
-  fi
-  
-  echo ""
   exit $exit_code
 }
 
