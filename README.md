@@ -477,6 +477,60 @@ BASE_URL="https://your-worker.workers.dev" ./scripts/register-with-qr.sh \
 
 ---
 
+## Viewing Dashboard URLs & QR Codes
+
+After registration, you can view your dashboard URLs and generate QR codes anytime:
+
+```bash
+./scripts/show_monitor_url_and_qr.sh
+```
+
+**What it shows:**
+- **Local dashboard:** Access from your computer and mobile devices on the same network
+- **Remote dashboard:** Access from anywhere via Cloudflare
+- **QR codes:** Optional QR code generation for easy mobile access
+
+**Example output:**
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Rosen Bridge Monitor - LOCAL DASHBOARD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✓ Docker container running
+
+Access from this computer:
+  http://localhost:8080/
+
+Access from mobile/other devices (same network):
+  http://192.168.1.5:8080/
+
+Show QR code for mobile access? [Y/n]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   REMOTE DASHBOARD (Cloudflare)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Dashboard URL:
+
+https://mute-mouse-2cd2.rbmonitor.workers.dev/d/KcFwvqd9vUvgS5QL3HpoJGysVhiuY558
+
+Show QR code to access dashboard? [Y/n]
+```
+
+**Options:**
+```bash
+# Show only local dashboard
+./scripts/show_monitor_url_and_qr.sh --local
+
+# Show only remote dashboard
+./scripts/show_monitor_url_and_qr.sh --remote
+
+# Auto-answer yes to all prompts
+./scripts/show_monitor_url_and_qr.sh -y
+```
+
+---
+
 ## For Admins
 
 ### Deploying to Cloudflare
