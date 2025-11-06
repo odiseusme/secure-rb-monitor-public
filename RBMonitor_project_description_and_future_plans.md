@@ -1398,7 +1398,7 @@ Ensure cross-platform compatibility (Linux, macOS)
 - [ ] Desktop shortcut/launcher for prepare_build.sh script
 - [ ] Interactive watcher add/remove from UI
 - [ ] Y/n prompts for building after discovery
-- [ ] Progress bars for permit utilization
+- [x] Progress bars for permit utilization (IMPLEMENTED - see public/index.html)
 - [ ] Mobile-responsive layout improvements
 - [ ] Dark mode toggle
 
