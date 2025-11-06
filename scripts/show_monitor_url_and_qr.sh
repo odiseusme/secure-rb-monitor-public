@@ -345,8 +345,13 @@ main() {
     else
       # Interactive: choose one
       while true; do
-        read -r -p "Display ${BOLD}local (L)${NC} or ${BOLD}remote (R)${NC} dashboard? [L/R] " choice
+        read -r -p "Display ${BOLD}local (L)${NC} or ${BOLD}remote (R)${NC} dashboard? [L/R] (default: R) " choice
         choice="${choice,,}"  # lowercase
+        
+        # Default to remote if empty
+        if [ -z "$choice" ]; then
+          choice="r"
+        fi
         
         case "$choice" in
           l|local)
@@ -359,10 +364,11 @@ main() {
             ;;
           *)
             echo ""
-            echo "${YELLOW}None chosen. Exiting.${NC}"
+            echo "${YELLOW}Invalid choice. Please enter 'L' for local or 'R' for remote.${NC}"
             echo ""
-            exit 0
             ;;
+        esac
+      done
         esac
       done
     fi
