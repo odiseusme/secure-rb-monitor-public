@@ -1346,10 +1346,11 @@ SCRIPT_EOF
   cat > ".last-sync-hash" <<STATE_EOF
 {
   "sequenceNumber": -1,
-  "version": 1
+  "version": 1,
+  "monitorStartTime": "$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")"
 }
 STATE_EOF
-  log_action "Initialized .last-sync-hash with sequence -1"
+  log_action "Initialized .last-sync-hash with sequence -1 and monitorStartTime"
   
   echo "$public_id"  # Return public_id for caller
 }
