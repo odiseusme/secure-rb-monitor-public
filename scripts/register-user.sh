@@ -328,6 +328,19 @@ backup_existing_config() {
     fi
   fi
   
+  # Clean up old state files to prevent sequence conflicts
+  if [ -f ".last-sync-hash" ]; then
+    rm -f ".last-sync-hash"
+    info "Removed old .last-sync-hash file"
+    log_action "Cleaned up .last-sync-hash"
+  fi
+  
+  if [ -f ".cf-sync-state.json" ]; then
+    rm -f ".cf-sync-state.json"
+    info "Removed old .cf-sync-state.json file"
+    log_action "Cleaned up .cf-sync-state.json"
+  fi
+  
   if [ $backup_count -eq 0 ]; then
     warn "No files to backup"
   fi
@@ -1327,6 +1340,15 @@ SCRIPT_EOF
   
   chmod +x "start-monitoring.sh"
   log_action "Generated start-monitoring.sh script"
+  
+  # Initialize uploader state file with sequence -1 so first upload will be sequence 0
+  cat > ".last-sync-hash" <<STATE_EOF
+{
+  "sequenceNumber": -1,
+  "version": 1
+}
+STATE_EOF
+  log_action "Initialized .last-sync-hash with sequence -1"
   
   echo "$public_id"  # Return public_id for caller
 }

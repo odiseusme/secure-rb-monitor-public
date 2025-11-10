@@ -199,7 +199,8 @@ start_uploader() {
   info "Starting uploader (cloudflare-sync.js) — user=$PUBLIC_ID"
   (
     export BASE_URL WRITE_TOKEN DASH_SALT_B64="$SALT" DASH_PASSPHRASE
-    nohup node "cloudflare-sync.js" >/dev/null 2>&1 &
+    mkdir -p .run
+    nohup node "cloudflare-sync.js" >> .run/uploader.log 2>&1 &
     echo $! > "$UPLOADER_PID_FILE"
   ) || die "Failed to start uploader"
   ok "Uploader up (pid=$(cat "$UPLOADER_PID_FILE"))"

@@ -15,42 +15,6 @@ const { safeFetch } = require('./lib/safe-fetch');
 
 
 // ---- Timer state helpers ----
-const STATE_PATH = path.join(process.cwd(), '.cf-sync-state.json');
-
-function loadState() {
-  try {
-    return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
-  } catch {
-    return {};
-  }
-}
-
-function saveState(next) {
-  try {
-    fs.writeFileSync(STATE_PATH, JSON.stringify(next, null, 2));
-  } catch (e) {
-    console.error('[sync] Failed to write state file:', e.message);
-  }
-}
-
-function isoNow() {
-  return new Date().toISOString();
-}
-
-// ---- Timer state (persisted) ----
-let state = loadState();
-
-if (typeof state.sequenceNumber !== 'number') {
-  state.sequenceNumber = 0;
-}
-
-if (!state.monitorStartTime) {
-  state.monitorStartTime = isoNow();
-}
-
-if (!state.lastDataChangeTime) {
-  state.lastDataChangeTime = isoNow();
-}
 
 const BASE_URL    = process.env.BASE_URL || 'http://localhost:38472';
 const WRITE_TOKEN = process.env.WRITE_TOKEN || '';
