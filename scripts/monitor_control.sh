@@ -187,8 +187,9 @@ start_uploader() {
   SALT="$(jq -er '.salt' .cloudflare-config.json)"
   DASHBOARD_URL="$(jq -er '.dashboardUrl' .cloudflare-config.json)"
 
-  # Passphrase required
+  # Passphrase required and validated
   : "${DASH_PASSPHRASE:?Set DASH_PASSPHRASE in env. It MUST match the dashboard prompt: $DASHBOARD_URL}"
+  [ -n "${DASH_PASSPHRASE:-}" ] || die "DASH_PASSPHRASE is empty or unset. Check your .env file for syntax errors (like unescaped special characters)."
 
   if uploader_running; then
     local pid; pid="$(cat "$UPLOADER_PID_FILE")"
