@@ -1442,6 +1442,20 @@ start_monitoring_prompt() {
   
   echo ""
   
+  # Ensure DOCKER_GID is set before starting Docker (required for build)
+  if [ -z "${DOCKER_GID:-}" ] || ! grep -q "^DOCKER_GID=." .env 2>/dev/null; then
+    local gid
+    gid="$(getent group docker | cut -d: -f3 || true)"
+    gid="${gid:-984}" # common fallback
+    if grep -q "^DOCKER_GID=" .env 2>/dev/null; then
+      sed -i.bak "s/^DOCKER_GID=.*/DOCKER_GID=$gid/" .env
+    else
+      echo "DOCKER_GID=$gid" >> .env
+    fi
+    export DOCKER_GID="$gid"
+    info "Auto-detected and set DOCKER_GID=$gid"
+  fi
+  
   case "${choice,,}" in
     l)
       # Local only - just Docker container
