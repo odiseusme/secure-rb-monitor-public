@@ -452,6 +452,19 @@ start_monitoring_with_existing() {
   echo ""
   info "Starting monitoring with existing credentials..."
   
+  # Ensure .last-sync-hash exists with monitorStartTime
+  if [ ! -f ".last-sync-hash" ]; then
+    info "Creating initial state file..."
+    cat > ".last-sync-hash" <<STATE_EOF
+{
+  "sequenceNumber": -1,
+  "version": 1,
+  "monitorStartTime": "$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")"
+}
+STATE_EOF
+    log_action "Initialized .last-sync-hash with sequence -1 and monitorStartTime"
+  fi
+  
   # Check if uploader is running
   if [ "$UPLOADER_RUNNING" = false ]; then
     if [ -x "./start-monitoring.sh" ]; then
