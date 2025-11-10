@@ -1044,23 +1044,42 @@ generate_qr_code() {
   local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   local qr_generator="$script_dir/generate-compact-qr.py"
   
-  # Check if Python 3 and qrcode library are available
-  if ! command -v python3 >/dev/null 2>&1; then
-    warn "python3 not installed - skipping QR code generation"
-    echo "  Install: sudo apt-get install -y python3" >&2
-    return 1
+  # Try Python qrcode first (best quality, compact)
+  local has_python_qr=false
+  if command -v python3 >/dev/null 2>&1 && python3 -c "import qrcode" 2>/dev/null && [ -f "$qr_generator" ]; then
+    has_python_qr=true
   fi
   
-  if ! python3 -c "import qrcode" 2>/dev/null; then
-    warn "python3-qrcode library not installed - skipping QR code generation" >&2
-    echo "  Install: sudo apt-get install -y python3-qrcode" >&2
-    echo "       or: pip3 install --user qrcode" >&2
-    return 1
+  # Try qrencode as fallback
+  local has_qrencode=false
+  if command -v qrencode >/dev/null 2>&1; then
+    has_qrencode=true
   fi
   
-  if [ ! -f "$qr_generator" ]; then
-    warn "QR generator script not found: $qr_generator" >&2
-    return 1
+  # If neither available, offer to install
+  if [ "$has_python_qr" = false ] && [ "$has_qrencode" = false ]; then
+    warn "No QR code generator found"
+    echo ""
+    echo "  Would you like to install python3-qrcode for QR generation? [y/N]"
+    read -r install_choice
+    if [[ "${install_choice,,}" =~ ^(y|yes)$ ]]; then
+      if command -v apt-get >/dev/null 2>&1; then
+        echo "  Installing python3-qrcode..."
+        if sudo apt-get update && sudo apt-get install -y python3-qrcode; then
+          has_python_qr=true
+          info "python3-qrcode installed successfully"
+        else
+          warn "Installation failed"
+          return 1
+        fi
+      else
+        warn "apt-get not available. Install manually: pip3 install --user qrcode"
+        return 1
+      fi
+    else
+      info "Skipping QR code generation"
+      return 1
+    fi
   fi
   
   local final_url="$url"
@@ -1081,20 +1100,41 @@ generate_qr_code() {
     echo "  ${YELLOW}This QR code contains your passphrase - treat as sensitive!${NC}" >&2
   fi
   
-  # Generate QR code with compact Python generator
+  # Generate QR code using available method
   echo "" >&2
   echo "${CYAN}QR Code (scan with mobile device):${NC}" >&2
   echo "" >&2
   
-  if SHOW_TERMINAL=1 python3 "$qr_generator" "$final_url" "$output_file" 2>&1; then
-    echo "" >&2
-    success "QR code saved to: $output_file" >&2
-    echo "" >&2
-    return 0
-  else
-    warn "Failed to generate QR code" >&2
-    return 1
+  if [ "$has_python_qr" = true ]; then
+    # Use Python qrcode (compact, better quality)
+    if SHOW_TERMINAL=1 python3 "$qr_generator" "$final_url" "$output_file" 2>&1; then
+      echo "" >&2
+      success "QR code saved to: $output_file" >&2
+      echo "" >&2
+      return 0
+    else
+      warn "Python QR generation failed, trying qrencode..."
+      has_python_qr=false
+    fi
   fi
+  
+  if [ "$has_qrencode" = true ]; then
+    # Fallback to qrencode
+    if qrencode -t ANSIUTF8 -m 2 "$final_url" 2>/dev/null; then
+      echo "" >&2
+      if qrencode -o "$output_file" -m 2 "$final_url" 2>/dev/null; then
+        success "QR code saved to: $output_file" >&2
+      fi
+      echo "" >&2
+      return 0
+    else
+      warn "qrencode generation failed"
+      return 1
+    fi
+  fi
+  
+  warn "Failed to generate QR code" >&2
+  return 1
 }
 
 # ============================================================================
