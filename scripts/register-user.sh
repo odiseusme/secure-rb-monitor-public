@@ -1280,7 +1280,8 @@ ENV_EOF
   
   # If user confirmed saving (decision already made with confirmation in get_passphrase)
   if [[ "$save_pass" =~ ^[Yy]$ ]]; then
-    printf 'DASH_PASSPHRASE="%s"\n' "$passphrase" >> .env
+    # Use single quotes to prevent bash variable expansion of special chars like $
+    printf "DASH_PASSPHRASE='%s'\n" "$passphrase" >> .env
     chmod 600 .env 2>/dev/null || true
     log_action "Passphrase saved to .env (user confirmed)"
     passphrase_saved=true
