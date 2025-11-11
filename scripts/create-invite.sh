@@ -11,7 +11,8 @@
 #   -h, --help         Show this help
 #
 
-set -e
+set -euo pipefail
+IFS=$'\n\t'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -61,37 +62,7 @@ EOF
     exit 0
 }
 
-# Parse arguments
-USE_LOCAL=false
-INVITE_COUNT=""
-INVITE_EXPIRY_DAYS=""
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        -h|--help)
-            show_help
-            ;;
-        --count)
-            INVITE_COUNT="$2"
-            shift 2
-            ;;
-        --days)
-            INVITE_EXPIRY_DAYS="$2"
-            shift 2
-            ;;
-        --local)
-            USE_LOCAL=true
-            shift
-            ;;
-        *)
-            log_error "Unknown option: $1"
-            echo "Run with --help for usage information"
-            exit 1
-            ;;
-    esac
-done
-
-# Load admin config
+# Load admin config first
 if [[ ! -f ".admin.env" ]]; then
     log_error "Missing .admin.env file"
     echo ""
@@ -115,9 +86,53 @@ if [[ -z "$ADMIN_KEY" ]] || [[ "$ADMIN_KEY" == "your-admin-key-hash-here" ]]; th
     exit 1
 fi
 
-# Set defaults from config or fallback
-INVITE_COUNT="${INVITE_COUNT:-${INVITE_COUNT:-1}}"
-INVITE_EXPIRY_DAYS="${INVITE_EXPIRY_DAYS:-${INVITE_EXPIRY_DAYS:-30}}"
+# Parse arguments (override config defaults)
+USE_LOCAL=false
+OVERRIDE_COUNT=""
+OVERRIDE_DAYS=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            show_help
+            ;;
+        --count)
+            OVERRIDE_COUNT="$2"
+            shift 2
+            ;;
+        --days)
+            OVERRIDE_DAYS="$2"
+            shift 2
+            ;;
+        --local)
+            USE_LOCAL=true
+            shift
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            echo "Run with --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# Helper to validate positive integers
+is_posint() { [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -gt 0 ]; }
+
+# Set final values (CLI args override config, config overrides defaults)
+INVITE_COUNT="${OVERRIDE_COUNT:-${INVITE_COUNT:-1}}"
+INVITE_EXPIRY_DAYS="${OVERRIDE_DAYS:-${INVITE_EXPIRY_DAYS:-30}}"
+
+# Validate numeric arguments
+if ! is_posint "$INVITE_COUNT"; then
+    log_error "--count must be a positive integer (got: $INVITE_COUNT)"
+    exit 1
+fi
+
+if ! is_posint "$INVITE_EXPIRY_DAYS"; then
+    log_error "--days must be a positive integer (got: $INVITE_EXPIRY_DAYS)"
+    exit 1
+fi
 
 # Determine worker URL
 if [[ "$USE_LOCAL" == true ]]; then
@@ -154,7 +169,9 @@ echo ""
 # Create invite
 log_info "Sending request to worker..."
 
-response=$(curl -s -w "\n%{http_code}" -X POST "$WORKER_URL/api/admin/create-invite" \
+response=$(curl -sS --fail-with-body \
+    --connect-timeout 5 --max-time 20 \
+    -w "\n%{http_code}" -X POST "$WORKER_URL/api/admin/create-invite" \
     -H "x-admin-key: $ADMIN_KEY" \
     -H "Content-Type: application/json" \
     -d "{\"count\": $INVITE_COUNT, \"expiresInDays\": $INVITE_EXPIRY_DAYS}")
@@ -169,15 +186,26 @@ if [[ "$http_code" != "200" ]]; then
     echo "$body" | jq -r '.' 2>/dev/null || echo "$body"
     echo ""
     
-    if [[ "$http_code" == "401" ]]; then
-        log_warn "Check your ADMIN_KEY in .admin.env"
-    elif [[ "$http_code" == "500" ]] && echo "$body" | grep -q "KV put"; then
-        log_warn "Cloudflare KV write limit exceeded"
-        echo "The worker has hit the daily write limit (1,000 writes/day)"
-        echo "Limit resets at UTC 00:00"
-        echo ""
-        echo "Current UTC time: $(date -u)"
-    fi
+    case "$http_code" in
+        401)
+            log_warn "Unauthorized: check ADMIN_KEY in .admin.env"
+            ;;
+        403)
+            log_warn "Forbidden: admin key not accepted in this environment"
+            ;;
+        429)
+            log_warn "Rate limited: retry later or lower request rate"
+            ;;
+        500)
+            if echo "$body" | grep -q "KV put"; then
+                log_warn "Cloudflare KV write limit exceeded"
+                echo "The worker has hit the daily write limit (1,000 writes/day)"
+                echo "Limit resets at UTC 00:00"
+                echo ""
+                echo "Current UTC time: $(date -u)"
+            fi
+            ;;
+    esac
     exit 1
 fi
 
@@ -186,17 +214,31 @@ echo ""
 log_success "Invite codes created successfully!"
 echo ""
 
-invites=$(echo "$body" | jq -r '.invites[]')
+# Save raw JSON audit with timestamp
+ts="$(date -u +'%Y%m%dT%H%M%SZ')"
+mkdir -p .admin-logs
+echo "$body" > ".admin-logs/invitations.$ts.json"
+log_info "Audit saved to: .admin-logs/invitations.$ts.json"
+echo ""
+
+# Parse invitations array (correct field name)
+mapfile -t INVITES < <(echo "$body" | jq -r '.invitations[].code')
 count=0
 
-while IFS= read -r invite; do
-    if [[ -n "$invite" ]]; then
-        count=$((count + 1))
-        echo "  Invite $count: $invite"
-    fi
-done <<< "$invites"
+for code in "${INVITES[@]}"; do
+    [[ -n "$code" ]] || continue
+    count=$((count + 1))
+    echo "  Invite $count: $code"
+done
 
 echo ""
+
+# One-liner CSV for clipboard / spreadsheets
+csv_line="${INVITES[*]}"
+csv_line="${csv_line// /,}"  # Replace spaces with commas
+echo "CSV: \"$csv_line\""
+echo ""
+
 log_info "Share these codes with users to register"
 echo ""
 

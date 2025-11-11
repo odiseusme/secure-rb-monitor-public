@@ -79,3 +79,4 @@ cleanup-repo.sh
 nohup.out
 create_new_user_register_and_run.md
 .admin.env
+.admin-logs/
