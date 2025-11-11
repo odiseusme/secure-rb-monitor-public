@@ -77,3 +77,4 @@ test-results-*.md
 .register-user.log
 cleanup-repo.sh
 nohup.out
+create_new_user_register_and_run.md
