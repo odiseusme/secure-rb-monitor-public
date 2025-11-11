@@ -286,8 +286,9 @@ EOF
     log_success "Invitation codes created!"
     echo ""
     
-    # Save audit log
+    # Save audit log with secure permissions
     local ts="$(date -u +'%Y%m%dT%H%M%SZ')"
+    umask 0077
     mkdir -p .admin-logs
     echo "$body" > ".admin-logs/invitations.$ts.json"
     log_info "Audit: .admin-logs/invitations.$ts.json"
