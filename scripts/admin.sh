@@ -79,13 +79,6 @@ EOF
     exit 0
 }
 
-    # Source the config file
-    set +u  # Temporarily disable unset variable check
-    set -a
-    source .admin.env
-    set +a
-    set -u
-
 # Load admin config
 load_config() {
     if [[ ! -f ".admin.env" ]]; then
@@ -275,8 +268,12 @@ EOF
     [[ -n "$note" ]] && echo "Note:    $note"
     echo ""
     
+    # Build JSON payload with proper escaping
     local payload="{\"count\": $count, \"expiresInDays\": $days"
-    [[ -n "$note" ]] && payload+=", \"note\": \"$note\""
+    if [[ -n "$note" ]]; then
+        local escaped_note=$(jq -R -n --arg str "$note" '$str')
+        payload+=", \"note\": $escaped_note"
+    fi
     payload+="}"
     
     log_info "Sending request..."
@@ -313,7 +310,15 @@ EOF
     echo "CSV: \"$csv_line\""
     echo ""
     
-    local expiry_date=$(date -u -d "+$days days" "+%Y-%m-%d %H:%M UTC")
+    # Portable date calculation (BSD/macOS vs GNU/Linux)
+    local expiry_date
+    if date -v+1d >/dev/null 2>&1; then
+        # BSD date (macOS)
+        expiry_date=$(date -u -v+${days}d "+%Y-%m-%d %H:%M UTC")
+    else
+        # GNU date (Linux)
+        expiry_date=$(date -u -d "+$days days" "+%Y-%m-%d %H:%M UTC")
+    fi
     log_info "Expires: $expiry_date"
     echo ""
 }
@@ -386,7 +391,12 @@ EOF
     local body=$(handle_response "$response") || exit 1
     
     echo ""
-    echo "$body" | jq -C '.'
+    # TTY-aware colorized output
+    if [[ -t 1 ]]; then
+        echo "$body" | jq -C '.'
+    else
+        echo "$body" | jq '.'
+    fi
     echo ""
 }
 
@@ -448,7 +458,12 @@ EOF
     
     log_success "User created!"
     echo ""
-    echo "$body" | jq -C '.'
+    # TTY-aware colorized output
+    if [[ -t 1 ]]; then
+        echo "$body" | jq -C '.'
+    else
+        echo "$body" | jq '.'
+    fi
     echo ""
 }
 
@@ -528,7 +543,12 @@ EOF
     
     log_success "User deleted"
     echo ""
-    echo "$body" | jq -C '.'
+    # TTY-aware colorized output
+    if [[ -t 1 ]]; then
+        echo "$body" | jq -C '.'
+    else
+        echo "$body" | jq '.'
+    fi
     echo ""
 }
 
