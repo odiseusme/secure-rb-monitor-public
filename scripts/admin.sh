@@ -6,7 +6,6 @@
 #
 
 set -euo pipefail
-IFS=$'\n\t'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -80,6 +79,13 @@ EOF
     exit 0
 }
 
+    # Source the config file
+    set +u  # Temporarily disable unset variable check
+    set -a
+    source .admin.env
+    set +a
+    set -u
+
 # Load admin config
 load_config() {
     if [[ ! -f ".admin.env" ]]; then
@@ -92,9 +98,12 @@ load_config() {
         exit 1
     fi
 
+    # Source the config file
+    set +u  # Temporarily disable unset variable check
     set -a
     source .admin.env
     set +a
+    set -u
 
     if [[ -z "$ADMIN_KEY" ]] || [[ "$ADMIN_KEY" == "your-admin-key-hash-here" ]]; then
         log_error "ADMIN_KEY not configured in .admin.env"
@@ -116,7 +125,11 @@ check_deps() {
         missing=1
     fi
     
-    [[ $missing -eq 1 ]] && exit 1
+    if [[ $missing -eq 1 ]]; then
+        exit 1
+    fi
+    
+    return 0
 }
 
 # Set worker URL based on environment
@@ -268,7 +281,10 @@ EOF
     
     log_info "Sending request..."
     local response=$(api_call POST "/api/admin/create-invite" "$payload")
-    local body=$(handle_response "$response") || exit 1
+    local body=$(handle_response "$response") || {
+        log_error "Failed to create invitations"
+        return 1
+    }
     
     log_success "Invitation codes created!"
     echo ""
@@ -281,7 +297,7 @@ EOF
     echo ""
     
     # Display invites
-    mapfile -t INVITES < <(echo "$body" | jq -r '.invitations[].code')
+    mapfile -t INVITES < <(echo "$body" | jq -r '.invitations[].code' 2>/dev/null)
     local idx=0
     for code in "${INVITES[@]}"; do
         [[ -n "$code" ]] || continue
@@ -517,10 +533,129 @@ EOF
 }
 
 #
+# INTERACTIVE MENU
+#
+show_menu() {
+    echo ""
+    echo "═══════════════════════════════════════════════════════════"
+    echo -e "  ${BOLD}RBMonitor Admin Console${NC}"
+    echo "═══════════════════════════════════════════════════════════"
+    echo ""
+    echo "What would you like to do?"
+    echo ""
+    echo "  [1] Create invitation code(s)      (default)"
+    echo "  [2] View user statistics"
+    echo "  [3] Create user directly (no invite)"
+    echo "  [4] Delete user account"
+    echo "  [5] Help / Usage information"
+    echo "  [Q] Quit"
+    echo ""
+}
+
+interactive_mode() {
+    check_deps
+    load_config
+    
+    while true; do
+        show_menu
+        read -p "Your choice [1]: " -r choice || { echo ""; echo "Goodbye!"; echo ""; exit 0; }
+        choice="${choice:-1}"  # Default to 1
+        
+        case "$choice" in
+            1)
+                echo ""
+                read -p "Number of invites [1]: " -r count
+                count="${count:-1}"
+                
+                read -p "Expiry days [30]: " -r days
+                days="${days:-30}"
+                
+                read -p "Optional note (press Enter to skip): " -r note
+                
+                read -p "Use local worker? [y/N]: " -r local_choice
+                local use_local=false
+                [[ "${local_choice:-}" =~ ^[Yy]$ ]] && use_local=true
+                
+                local args=(--count "$count" --days "$days")
+                [[ -n "${note:-}" ]] && args+=(--note "$note")
+                [[ "$use_local" == true ]] && args+=(--local)
+                
+                cmd_create_invite "${args[@]}" || true
+                
+                echo ""
+                read -p "Press Enter to continue..." -r
+                ;;
+            2)
+                echo ""
+                read -p "Include inactive users? [y/N]: " -r inactive
+                read -p "Show only suspicious? [y/N]: " -r suspicious
+                read -p "Use local worker? [y/N]: " -r local_choice
+                
+                local args=()
+                [[ "${inactive:-}" =~ ^[Yy]$ ]] && args+=(--inactive)
+                [[ "${suspicious:-}" =~ ^[Yy]$ ]] && args+=(--suspicious)
+                [[ "${local_choice:-}" =~ ^[Yy]$ ]] && args+=(--local)
+                
+                cmd_stats "${args[@]}"
+                
+                read -p "Press Enter to continue..." -r
+                ;;
+            3)
+                echo ""
+                read -p "Use local worker? [y/N]: " -r local_choice
+                
+                local args=()
+                [[ "${local_choice:-}" =~ ^[Yy]$ ]] && args+=(--local)
+                
+                cmd_create_user "${args[@]}"
+                
+                read -p "Press Enter to continue..." -r
+                ;;
+            4)
+                echo ""
+                read -p "Enter user public ID: " -r public_id
+                
+                if [[ -z "${public_id:-}" ]]; then
+                    log_error "Public ID required"
+                    read -p "Press Enter to continue..." -r
+                    continue
+                fi
+                
+                read -p "Use local worker? [y/N]: " -r local_choice
+                
+                local args=("$public_id")
+                [[ "${local_choice:-}" =~ ^[Yy]$ ]] && args+=(--local)
+                
+                cmd_delete_user "${args[@]}"
+                
+                read -p "Press Enter to continue..." -r
+                ;;
+            5)
+                show_help
+                ;;
+            q|Q)
+                echo ""
+                echo "Goodbye!"
+                echo ""
+                exit 0
+                ;;
+            *)
+                log_error "Invalid choice: $choice"
+                read -p "Press Enter to continue..." dummy
+                ;;
+        esac
+    done
+}
+
+#
 # MAIN
 #
 main() {
-    [[ $# -eq 0 ]] && show_help
+    # If no arguments, start interactive mode
+    if [[ $# -eq 0 ]]; then
+        interactive_mode
+        exit 0
+    fi
     
     local command="$1"
     shift
