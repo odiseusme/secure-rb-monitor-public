@@ -1129,3 +1129,49 @@ MIT License – see [`LICENSE`](./LICENSE) for details.
 ---
 
 > **Note:** This is a community project for the Rosen Bridge ecosystem maintained by @odiseus_me. Feedback from Rosen Bridge maintainers and security reviewers is welcome.
+
+---
+
+## Admin Console (Interactive CLI)
+
+A new interactive admin console is available for all admin operations:
+
+```bash
+./scripts/admin.sh
+```
+
+**Features:**
+- Menu-driven interface for:
+  - Creating invitation codes
+  - Viewing user statistics
+  - Deleting user accounts (with explicit success/failure feedback and fallback routes)
+- All actions are logged to `.admin-logs` (private by default)
+- No need to remember endpoints or flags—just follow the prompts
+
+**Example:**
+```
+═══════════════════════════════════════════════════════════
+  RBMonitor Admin Console
+═══════════════════════════════════════════════════════════
+
+What would you like to do?
+
+  [1] Create invitation code(s)      (default)
+  [2] View user statistics
+  [3] Create user directly (no invite)
+  [4] Delete user account
+  [5] Help / Usage information
+  [Q] Quit
+```
+
+**To create invites:**
+- Select option 1, enter number of invites and expiry days.
+
+**To delete a user:**
+- Select option 4, enter the public ID, confirm deletion.
+- The script will show “✓ User deleted”, “⚠ User not found”, or a clear error if deletion fails.
+
+**To view stats:**
+- Select option 2.
+
+---

@@ -97,6 +97,28 @@ README.md: user documentation
 
 .github/workflows: CI and security scans
 
+1.3a Admin Console (Interactive CLI)
+
+A robust, menu-driven Bash script (scripts/admin.sh) provides a unified interface for all admin operations. This tool enables administrators to perform user management tasks (invite, stats, delete-user) with clear feedback, fallback logic, and audit logging.
+
+Features:
+
+Interactive menu for all admin actions.
+Explicit success/failure feedback for each operation.
+Multiple fallback routes for critical actions (e.g., user deletion).
+Strict Bash mode, error handling, and colorized output for TTY.
+Audit logs stored in .admin-logs (private permissions).
+Usage:
+
+Run ./scripts/admin.sh and follow the prompts.
+All actions are logged for traceability.
+Help and sensible defaults are provided for each menu item.
+Security:
+
+Only authorized admins should have access to the script and logs.
+Logs are stored with restrictive permissions to prevent unauthorized access.
+This CLI replaces manual admin endpoint calls and ensures consistent, reliable admin workflows.
+
 1.4 Registration and Access
 
 Standard registration (v1.0.2 improvements):
