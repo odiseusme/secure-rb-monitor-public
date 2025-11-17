@@ -67,6 +67,27 @@ docker compose up -d --build
 
 ### Path B – Remote Monitoring with Cloudflare *(Encrypted)*
 
+---
+
+## Usage Options
+
+1. **Free Forever:**
+  - Use RBMonitor only at home, or
+  - Become your own admin by registering for a free Cloudflare account.
+
+2. **Pay or Donate:**
+  - Get unlimited use (subject to Cloudflare limits) by supporting the project:
+    - Pay a small monthly fee, or
+    - Donate to help cover hosting costs.
+
+3. **One Month Free:**
+  - Try RBMonitor with full features for one month, then choose to pay/donate for continued unlimited use.
+
+
+**ERG Donation/Payment Address:**
+`9gf2Shf1DXz3JCECWaSajNJN1rUB9XoJaSwUc5MZTdJwFqzZnSg`
+---
+
 Monitor from anywhere with end-to-end encrypted remote access.
 
 ⚠️ **Important:** Only the project admin (who deploys the Worker) needs a Cloudflare account. Regular users just receive an invitation code and access their encrypted dashboard – no Cloudflare account required.
@@ -1129,6 +1150,21 @@ MIT License – see [`LICENSE`](./LICENSE) for details.
 ---
 
 > **Note:** This is a community project for the Rosen Bridge ecosystem maintained by @odiseus_me. Feedback from Rosen Bridge maintainers and security reviewers is welcome.
+
+---
+
+A new interactive admin console is available for all admin operations:
+
+---
+
+## Support & Donations
+
+If you find this project useful, consider supporting development with a donation or payment:
+
+**ERG Donation/Payment Address:**
+`9gf2Shf1DXz3JCECWaSajNJN1rUB9XoJaSwUc5MZTdJwFqzZnSg`
+
+Thank you for helping keep RBMonitor free and open!
 
 ---
 
